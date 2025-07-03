@@ -5,5 +5,5 @@ Visit http://localhost:3000 to use the application
 ✅ Local repo up to date
 🔥 Cache warming disabled to preserve API rate limits
    Cache will be populated on first use
-🔍 Searching commits by message: "fix" (page 1)
-🔍 Searching commits by message: "fix" (page 2)
+🔍 Searching commits by message: "download retrying" (page 1)
+🔍 Searching commits by message: "download retrying" (page 1)
