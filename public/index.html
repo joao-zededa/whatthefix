@@ -35,10 +35,6 @@
                             Search
                         </button>
                     </div>
-                    <div class="search-hint">
-                        <i class="fas fa-lightbulb"></i>
-                        <span>Automatically detects commit IDs (SHA) or searches by message keywords</span>
-                    </div>
                 </div>
             </div>
 
@@ -64,7 +60,7 @@
                 <div id="emptyState" class="empty-state">
                     <i class="fas fa-search"></i>
                     <h3>Search EVE-OS Fixes</h3>
-                    <p>Enter a commit message keyword or commit ID to find fixes in the EVE-OS repository.</p>
+                    <p>Enter a commit message keyword, commit ID, or the name of the legend who fixed the issue -or all together!</p>
                     <div class="examples">
                         <h4>Examples:</h4>
                         <div class="example-tags">
@@ -80,17 +76,69 @@
         </main>
     </div>
 
-    <!-- Commit Detail Modal -->
-    <div id="commitModal" class="modal hidden">
+    <!-- Commit Details Modal -->
+    <div id="commitModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>Commit Details</h3>
-                <button id="closeModal" class="close-button">
-                    <i class="fas fa-times"></i>
-                </button>
+                <h2>Commit Details</h2>
+                <span class="close">&times;</span>
             </div>
-            <div id="commitDetails" class="modal-body">
-                <!-- Commit details will be loaded here -->
+            
+            <div class="modal-body">
+                <!-- Basic commit information -->
+                <div class="commit-detail">
+                    <h4><i class="fas fa-hashtag"></i> Commit ID</h4>
+                    <p id="commitId" style="font-family: Monaco, monospace; background: #f8f9fa; padding: 10px; border-radius: 6px;"></p>
+                </div>
+                
+                <div class="commit-detail">
+                    <h4><i class="fas fa-comment"></i> Message</h4>
+                    <p id="commitMessage" style="white-space: pre-wrap; line-height: 1.6;"></p>
+                </div>
+                
+                <div class="commit-detail">
+                    <h4><i class="fas fa-user"></i> Author</h4>
+                    <p id="commitAuthor"></p>
+                </div>
+                
+                <div class="commit-detail">
+                    <h4><i class="fas fa-calendar"></i> Date</h4>
+                    <p id="commitDate"></p>
+                </div>
+                
+                <!-- Load Tags Section -->
+                <div class="commit-detail">
+                    <h4><i class="fas fa-tags"></i> Versions Containing This Fix</h4>
+                    <div class="tags-actions">
+                        <button onclick="loadTags()" class="load-tags-button">
+                            <i class="fas fa-search"></i>
+                            Find Tags Containing This Commit
+                        </button>
+                        <small class="action-note">Get the exact list of versions that include this fix</small>
+                    </div>
+                </div>
+                
+                <!-- Tags Results Section -->
+                <div id="tagsSection" class="commit-detail" style="display: none;">
+                    <!-- Loading State -->
+                    <div id="loadingTags" class="loading-indicator">
+                        <div class="spinner"></div>
+                        <p>Finding tags containing this commit...</p>
+                    </div>
+                    
+                    <!-- Results -->
+                    <div id="tagsLoaded" style="display: none;">
+                        <h5><i class="fas fa-tag"></i> Found <span id="tagCount">0</span> tags</h5>
+                        <div id="tagsList" class="tags-list">
+                            <!-- Tags will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="commit-detail">
+                    <h4><i class="fas fa-external-link-alt"></i> View on GitHub</h4>
+                    <p><a id="commitUrl" href="#" target="_blank" style="color: #667eea; text-decoration: none;"></a></p>
+                </div>
             </div>
         </div>
     </div>

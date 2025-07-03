@@ -1,23 +1,25 @@
 EVE-OS Fix Finder server running on port 3000
 Visit http://localhost:3000 to use the application
 ✅ GitHub token configured - higher rate limits available
+🔄 Fetching latest changes in local repo…
+✅ Local repo up to date
 🔥 Cache warming disabled to preserve API rate limits
    Cache will be populated on first use
-GitHub API rate limit exceeded. Consider adding a GITHUB_TOKEN to your .env file
-Error searching commits: API rate limit exceeded. Please try again later or contact administrator.
-Search error: API rate limit exceeded. Please try again later or contact administrator.
-GitHub API rate limit exceeded. Consider adding a GITHUB_TOKEN to your .env file
-Error searching commits: API rate limit exceeded. Please try again later or contact administrator.
-Search error: API rate limit exceeded. Please try again later or contact administrator.
-GitHub API rate limit exceeded. Consider adding a GITHUB_TOKEN to your .env file
-Error fetching commit details: API rate limit exceeded. Please try again later or contact administrator.
-Commit fetch error: API rate limit exceeded. Please try again later or contact administrator.
-GitHub API rate limit exceeded. Consider adding a GITHUB_TOKEN to your .env file
-Error fetching commit details: API rate limit exceeded. Please try again later or contact administrator.
-Commit fetch error: API rate limit exceeded. Please try again later or contact administrator.
-GitHub API rate limit exceeded. Consider adding a GITHUB_TOKEN to your .env file
-Error fetching commit details: API rate limit exceeded. Please try again later or contact administrator.
-Commit fetch error: API rate limit exceeded. Please try again later or contact administrator.
-GitHub API rate limit exceeded. Consider adding a GITHUB_TOKEN to your .env file
-Error fetching commit details: API rate limit exceeded. Please try again later or contact administrator.
-Commit fetch error: API rate limit exceeded. Please try again later or contact administrator.
+🔍 Searching commits by message: "security"
+🔍 Searching commits by message: "edge"
+🔍 Searching commits by message: "download retrying"
+🔍 Searching commits by message: "download retrying"
+🔍 Searching commits by message: "2024"
+🔍 Searching commits by message: "jun 28"
+🔍 Searching commits by message: "jun"
+🔍 Searching commits by message: "download retrying"
+🔍 Searching commits by message: "download retrying"
+🔍 Searching commits by message: "milan"
+🔍 Searching commits by message: "milan download"
+🔍 Searching commits by message: "download retrying"
+🔍 Searching commits by message: "download retrying"
+🔍 Searching commits by message: "download retrying"
+🔍 Searching commits by message: "download retrying"
+🔍 Searching commits by message: "wtf.zededa.com"
+🔍 Searching commits by message: "download retrying"
+🔍 Searching commits by message: "download retrying"
