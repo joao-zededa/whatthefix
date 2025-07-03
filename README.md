@@ -4,7 +4,6 @@ A powerful web application to search for fixes and commits in the EVE-OS reposit
 
 ![EVE-OS Fix Finder](https://img.shields.io/badge/EVE--OS-Fix%20Finder-blue)
 ![Node.js](https://img.shields.io/badge/Node.js-18+-green)
-![License](https://img.shields.io/badge/License-MIT-yellow)
 
 ## 🌟 Features
 
@@ -35,6 +34,14 @@ A powerful web application to search for fixes and commits in the EVE-OS reposit
 - **Rate Limit Management**: Efficient GitHub API usage with token support
 - **Error Recovery**: Graceful handling of network issues and API limits
 - **Local Git Repo**: Clones EVE-OS locally for lightning-fast tag analysis
+
+## 🚀 What's Coming
+
+Exciting features in development:
+
+- **User Profile Creation**: Personalized accounts with custom settings and preferences
+- **Search History**: Track and revisit your previous searches with saved results
+- **GitHub Token Configuration**: Manage your GitHub authentication directly within your profile
 
 ## 📱 Screenshots
 
@@ -89,7 +96,7 @@ npm run dev
 5. **Open your browser**
 Navigate to `http://localhost:3000`
 
-The first startup will clone the EVE-OS repository locally for fast tag analysis. Since this will be hosted on a
+The first startup will clone the EVE-OS repository locally for fast tag analysis. The application automatically keeps this repository synchronized with the latest changes by performing background updates whenever the local cache expires (every 30 minutes) or when new tags are detected. This ensures you always have access to the most current version information while maintaining lightning-fast search performance. 
 
 ## 📖 Usage Guide
 
