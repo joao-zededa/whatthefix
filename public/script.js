@@ -17,6 +17,7 @@ const exampleTags = document.querySelectorAll('.example-tag');
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
     initializeEventListeners();
+    checkCacheStatus();
 });
 
 function initializeEventListeners() {
@@ -51,6 +52,22 @@ function initializeEventListeners() {
             hideModal();
         }
     });
+}
+
+// Check cache status on startup
+async function checkCacheStatus() {
+    try {
+        const response = await fetch('/api/cache/status');
+        const status = await response.json();
+        
+        if (status.tags.cached) {
+            console.log(`✅ Cache ready: ${status.tags.count} tags loaded`);
+        } else {
+            console.log('🔄 Cache warming up in background...');
+        }
+    } catch (error) {
+        console.warn('Could not check cache status:', error);
+    }
 }
 
 // Function to detect if input is a commit SHA
@@ -198,28 +215,83 @@ function createCommitItem(commit) {
 async function showCommitDetails(sha) {
     try {
         showModal();
-        commitDetails.innerHTML = '<div class="loading-indicator"><div class="spinner"></div><p>Loading commit details...</p></div>';
         
-        const response = await fetch(`/api/commits/${sha}`);
-        const commit = await response.json();
+        // Show optimized loading message
+        commitDetails.innerHTML = `
+            <div class="loading-indicator">
+                <div class="spinner"></div>
+                <p>Loading commit details...</p>
+                <div class="loading-progress">
+                    <div class="progress-step active">
+                        <i class="fas fa-download"></i>
+                        <span>Fetching commit info</span>
+                    </div>
+                    <div class="progress-step" id="quickProgress">
+                        <i class="fas fa-lightning"></i>
+                        <span>Quick analysis</span>
+                    </div>
+                    <div class="progress-step" id="detailedProgress">
+                        <i class="fas fa-tags"></i>
+                        <span>Detailed analysis</span>
+                    </div>
+                </div>
+            </div>
+        `;
         
-        if (!response.ok) {
+        // Step 1: Fetch commit details first (fastest)
+        const commitResponse = await fetch(`/api/commits/${sha}`);
+        const commit = await commitResponse.json();
+        
+        if (!commitResponse.ok) {
             throw new Error(commit.error || 'Failed to load commit details');
         }
         
-        displayCommitDetails(commit);
+        // Update progress - mark quick analysis as active
+        const quickProgress = document.getElementById('quickProgress');
+        if (quickProgress) {
+            quickProgress.classList.add('active');
+        }
+        
+        // Step 2: Get quick tag estimation (fast)
+        const quickTagResponse = await fetch(`/api/commits/${sha}/quick-tags`);
+        const quickTagData = await quickTagResponse.json();
+        
+        // Show basic commit info with quick estimation immediately
+        displayCommitDetailsProgressive(commit, quickTagData, null);
+        
+        // Update progress - mark detailed analysis as active
+        const detailedProgress = document.getElementById('detailedProgress');
+        if (detailedProgress) {
+            detailedProgress.classList.add('active');
+        }
+        
+        // Step 3: Get detailed tag analysis in background (slower)
+        const tagsResponse = await fetch(`/api/commits/${sha}/tags`);
+        const tagData = await tagsResponse.json();
+        
+        if (!tagsResponse.ok) {
+            console.warn('Failed to load detailed tags:', tagData.error);
+            // Keep the quick estimation
+        } else {
+            // Update with detailed information
+            displayCommitDetails(commit, tagData);
+        }
+        
     } catch (error) {
         console.error('Error loading commit details:', error);
         commitDetails.innerHTML = `
             <div class="error-message">
                 <i class="fas fa-exclamation-triangle"></i>
                 <p>Failed to load commit details: ${error.message}</p>
+                <button onclick="showCommitDetails('${sha}')" class="retry-button">
+                    <i class="fas fa-redo"></i> Retry
+                </button>
             </div>
         `;
     }
 }
 
-function displayCommitDetails(commit) {
+function displayCommitDetailsProgressive(commit, quickData, detailedData) {
     const commitDate = new Date(commit.date).toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'long',
@@ -228,22 +300,42 @@ function displayCommitDetails(commit) {
         minute: '2-digit'
     });
     
-    let filesHtml = '';
-    if (commit.files && commit.files.length > 0) {
-        filesHtml = `
-            <div class="commit-files">
-                <h4><i class="fas fa-file-code"></i> Files Changed (${commit.files.length})</h4>
-                ${commit.files.map(file => `
-                    <div class="file-item">
-                        <div class="file-header">
-                            <div class="file-name">${escapeHtml(file.filename)}</div>
-                            <div class="file-stats">
-                                <span class="additions">+${file.additions}</span>
-                                <span class="deletions">-${file.deletions}</span>
-                            </div>
+    // Create quick summary HTML
+    let versionSummaryHtml = '';
+    
+    if (quickData) {
+        const estimatedTags = quickData.estimatedTags || 0;
+        const branches = quickData.branches || 0;
+        const isInMain = quickData.isInMainBranch;
+        
+        versionSummaryHtml = `
+            <div class="commit-detail">
+                <h4><i class="fas fa-bolt"></i> Quick Analysis</h4>
+                <div class="version-summary quick-summary">
+                    <div class="version-stats">
+                        <div class="version-stat">
+                            <span class="stat-number">${estimatedTags}</span>
+                            <span class="stat-label">Est. Versions</span>
+                        </div>
+                        <div class="version-stat">
+                            <span class="stat-number">${branches}</span>
+                            <span class="stat-label">Branches</span>
                         </div>
                     </div>
-                `).join('')}
+                    
+                    <div class="version-highlights">
+                        <div class="version-highlight">
+                            <span class="highlight-label">Status:</span>
+                            <span class="version-tag ${isInMain ? 'latest' : ''}">${isInMain ? 'In Main Branch' : 'Feature Branch'}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="quick-note">
+                        <i class="fas fa-info-circle"></i>
+                        <span>Loading detailed analysis...</span>
+                        <div class="quick-spinner"></div>
+                    </div>
+                </div>
             </div>
         `;
     }
@@ -269,13 +361,170 @@ function displayCommitDetails(commit) {
             <p>${commitDate}</p>
         </div>
         
+        ${versionSummaryHtml}
+        
         <div class="commit-detail">
             <h4><i class="fas fa-external-link-alt"></i> View on GitHub</h4>
             <p><a href="${commit.url}" target="_blank" style="color: #667eea; text-decoration: none;">${commit.url}</a></p>
         </div>
-        
-        ${filesHtml}
     `;
+}
+
+function displayCommitDetails(commit, tagData) {
+    const commitDate = new Date(commit.date).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+    
+    // Create version summary HTML
+    let versionSummaryHtml = '';
+    let tagsHtml = '';
+    
+    if (tagData && tagData.summary) {
+        const { summary } = tagData;
+        
+        versionSummaryHtml = `
+            <div class="commit-detail">
+                <h4><i class="fas fa-tag"></i> Version Analysis <span class="analysis-complete">✅ Complete</span></h4>
+                <div class="version-summary">
+                    <div class="version-stats">
+                        <div class="version-stat">
+                            <span class="stat-number">${summary.totalTags}</span>
+                            <span class="stat-label">Total Versions</span>
+                        </div>
+                        <div class="version-stat">
+                            <span class="stat-number">${summary.ltsCount}</span>
+                            <span class="stat-label">LTS Versions</span>
+                        </div>
+                    </div>
+                    
+                    <div class="version-highlights">
+                        ${summary.latestVersion ? `
+                            <div class="version-highlight">
+                                <span class="highlight-label">Latest:</span>
+                                <span class="version-tag latest">${summary.latestVersion.name}</span>
+                            </div>
+                        ` : ''}
+                        
+                        ${summary.latestLTS ? `
+                            <div class="version-highlight">
+                                <span class="highlight-label">Latest LTS:</span>
+                                <span class="version-tag lts">${summary.latestLTS.name}</span>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Create tags section
+        if (tagData.tags && tagData.tags.length > 0) {
+            tagsHtml = `
+                <div class="commit-detail">
+                    <div class="tags-header">
+                        <h4><i class="fas fa-tags"></i> Versions Containing This Fix</h4>
+                        <div class="tags-controls">
+                            <label class="lts-toggle">
+                                <input type="checkbox" id="ltsOnlyToggle">
+                                <span class="toggle-label">LTS Only</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="tags-container" id="tagsContainer">
+                        ${createTagsHTML(tagData.tags)}
+                    </div>
+                </div>
+            `;
+        }
+    }
+    
+    commitDetails.innerHTML = `
+        <div class="commit-detail">
+            <h4><i class="fas fa-hashtag"></i> Commit ID</h4>
+            <p style="font-family: Monaco, monospace; background: #f8f9fa; padding: 10px; border-radius: 6px;">${commit.sha}</p>
+        </div>
+        
+        <div class="commit-detail">
+            <h4><i class="fas fa-comment"></i> Message</h4>
+            <p style="white-space: pre-wrap; line-height: 1.6;">${escapeHtml(commit.message)}</p>
+        </div>
+        
+        <div class="commit-detail">
+            <h4><i class="fas fa-user"></i> Author</h4>
+            <p>${escapeHtml(commit.author)}</p>
+        </div>
+        
+        <div class="commit-detail">
+            <h4><i class="fas fa-calendar"></i> Date</h4>
+            <p>${commitDate}</p>
+        </div>
+        
+        ${versionSummaryHtml}
+        
+        ${tagsHtml}
+        
+        <div class="commit-detail">
+            <h4><i class="fas fa-external-link-alt"></i> View on GitHub</h4>
+            <p><a href="${commit.url}" target="_blank" style="color: #667eea; text-decoration: none;">${commit.url}</a></p>
+        </div>
+    `;
+    
+    // Add event listener for LTS toggle if tags exist
+    if (tagData && tagData.tags && tagData.tags.length > 0) {
+        const ltsToggle = document.getElementById('ltsOnlyToggle');
+        if (ltsToggle) {
+            ltsToggle.addEventListener('change', function() {
+                toggleLTSFilter(commit.sha, this.checked);
+            });
+        }
+    }
+}
+
+function createTagsHTML(tags) {
+    return tags.map(tag => {
+        const tagDate = tag.date ? new Date(tag.date).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric'
+        }) : 'Unknown date';
+        
+        return `
+            <div class="tag-item ${tag.isLTS ? 'lts' : ''}">
+                <div class="tag-name">
+                    <span class="version-tag ${tag.isLTS ? 'lts' : ''}">${tag.name}</span>
+                    ${tag.isLTS ? '<span class="lts-badge">LTS</span>' : ''}
+                </div>
+                <div class="tag-date">${tagDate}</div>
+            </div>
+        `;
+    }).join('');
+}
+
+async function toggleLTSFilter(sha, ltsOnly) {
+    try {
+        const tagsContainer = document.getElementById('tagsContainer');
+        tagsContainer.innerHTML = '<div class="loading-indicator"><div class="spinner"></div><p>Filtering...</p></div>';
+        
+        const response = await fetch(`/api/commits/${sha}/tags?ltsOnly=${ltsOnly}`);
+        const tagData = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(tagData.error || 'Failed to load tags');
+        }
+        
+        tagsContainer.innerHTML = createTagsHTML(tagData.tags);
+    } catch (error) {
+        console.error('Error toggling LTS filter:', error);
+        document.getElementById('tagsContainer').innerHTML = `
+            <div class="error-message">
+                <i class="fas fa-exclamation-triangle"></i>
+                <p>Failed to load tags: ${error.message}</p>
+            </div>
+        `;
+    }
 }
 
 function showModal() {
