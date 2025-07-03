@@ -264,7 +264,7 @@ whatthefix/
 ```
 
 ### Environment Setup
-1. **GitHub Token**: Create at https://github.com/settings/tokens with `public_repo` scope
+1. **GitHub Token**: Generate a new Classic Token at https://github.com/settings/tokens with `public_repo` scope
 2. **Local Development**: Use `npm run dev` for auto-reload
 3. **Production**: Use `npm start` for stable deployment
 
