@@ -44,6 +44,9 @@ Exciting features in development:
 - **GitHub Token Configuration**: Manage your GitHub authentication directly within your profile
 
 ## 📱 Screenshots
+![Homescreen](https://github.com/user-attachments/assets/d01f432e-b9f9-4aac-a14b-2474856accbd)
+![Search](https://github.com/user-attachments/assets/1003f902-2369-45ce-9e1f-34f8318d697a)
+![Results](https://github.com/user-attachments/assets/1f211706-fa99-49b9-bc77-856f9c792403)
 
 The application features a modern interface with:
 - **Clean Search Interface**: Universal search box with smart detection
