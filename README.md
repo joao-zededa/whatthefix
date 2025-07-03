@@ -1,8 +1,8 @@
-# EVE-OS Fix Finder
+# WhatTheFix
 
 A powerful web application to search for fixes and commits in the EVE-OS repository, with advanced features for finding which versions contain specific commits.
 
-![EVE-OS Fix Finder](https://img.shields.io/badge/EVE--OS-Fix%20Finder-blue)
+![WhatTheFix](https://img.shields.io/badge/WhatTheFix-blue)
 ![Node.js](https://img.shields.io/badge/Node.js-18+-green)
 
 ## 🌟 Features
