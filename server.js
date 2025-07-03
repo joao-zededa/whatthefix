@@ -418,32 +418,44 @@ async function getCommitDetails(sha) {
 }
 
 // Search for commits by message or get commit by SHA
-async function searchCommits(query, type = 'message') {
+async function searchCommits(query, type = 'message', page = 1, perPage = 30) {
   try {
     // If it looks like a SHA, treat it as a commit ID
     if (query.match(/^[a-f0-9]{7,40}$/i)) {
       console.log(`🔍 Searching by commit SHA: ${query}`);
       try {
         const response = await makeGitHubRequest(`${GITHUB_API_BASE}/repos/${EVE_OS_REPO}/commits/${query}`);
-        return [response.data];
+        return { 
+          items: [response.data], 
+          total_count: 1, 
+          incomplete_results: false,
+          has_more: false
+        };
       } catch (error) {
         if (error.response && error.response.status === 404) {
-          return []; // Commit not found
+          return { items: [], total_count: 0, incomplete_results: false, has_more: false };
         }
         throw error;
       }
     }
     
     // Otherwise, search by commit message
-    console.log(`🔍 Searching commits by message: "${query}"`);
+    console.log(`🔍 Searching commits by message: "${query}" (page ${page})`);
     const response = await makeGitHubRequest(`${GITHUB_API_BASE}/search/commits`, {
       q: `repo:${EVE_OS_REPO} ${query}`,
       sort: 'committer-date',
       order: 'desc',
-      per_page: 20
+      per_page: perPage,
+      page: page
     });
     
-    return response.data.items || [];
+    const data = response.data;
+    return {
+      items: data.items || [],
+      total_count: data.total_count || 0,
+      incomplete_results: data.incomplete_results || false,
+      has_more: (page * perPage) < (data.total_count || 0)
+    };
   } catch (error) {
     console.error('Error searching commits:', error.message);
     throw error;
@@ -453,16 +465,19 @@ async function searchCommits(query, type = 'message') {
 // API Routes
 app.get('/api/search/commits', async (req, res) => {
   try {
-    const { query, type = 'message' } = req.query;
+    const { query, type = 'message', page = 1, per_page = 30 } = req.query;
     
     if (!query) {
       return res.status(400).json({ error: 'Query parameter is required' });
     }
 
-    const commits = await searchCommits(query, type);
+    const pageNum = parseInt(page) || 1;
+    const perPageNum = Math.min(parseInt(per_page) || 30, 100); // Max 100 per page
+    
+    const searchResult = await searchCommits(query, type, pageNum, perPageNum);
     
     // Format the response
-    const formattedCommits = commits.map(commit => ({
+    const formattedCommits = searchResult.items.map(commit => ({
       sha: commit.sha,
       message: commit.commit.message,
       author: commit.commit.author.name,
@@ -474,7 +489,12 @@ app.get('/api/search/commits', async (req, res) => {
     res.json({
       query,
       type,
+      page: pageNum,
+      per_page: perPageNum,
       count: formattedCommits.length,
+      total_count: searchResult.total_count,
+      has_more: searchResult.has_more,
+      incomplete_results: searchResult.incomplete_results,
       commits: formattedCommits
     });
   } catch (error) {

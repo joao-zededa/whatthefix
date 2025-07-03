@@ -1,6 +1,12 @@
 // Global variables
 let searchTimeout;
 let currentResults = [];
+let currentPage = 1;
+let currentQuery = '';
+let currentSearchType = '';
+let hasMoreResults = false;
+let isLoadingMore = false;
+let scrollTimeout;
 
 // DOM elements - Fixed to match actual HTML structure
 const searchInput = document.getElementById('searchInput');
@@ -89,6 +95,9 @@ function initializeEventListeners() {
         }
     });
 
+    // Infinite scroll - DISABLED for debugging
+    // window.addEventListener('scroll', handleScroll);
+
     // Modal functionality - Fixed to work with actual HTML structure
     commitModal.addEventListener('click', function(e) {
         if (e.target === commitModal) {
@@ -131,33 +140,63 @@ function detectSearchType(query) {
     return isCommitSHA(query) ? 'sha' : 'message';
 }
 
-async function performSearch() {
-    const query = searchInput.value.trim();
+async function performSearch(isNewSearch = true) {
+    let query, searchType;
     
-    if (!query) {
-        showSearchHint();
-        return;
-    }
+    if (isNewSearch) {
+        query = searchInput.value.trim();
+        
+        if (!query) {
+            showSearchHint();
+            return;
+        }
 
-    // Automatically detect search type
-    const searchType = detectSearchType(query);
+        // Automatically detect search type
+        searchType = detectSearchType(query);
+        
+        // Reset pagination for new searches
+        currentPage = 1;
+        currentQuery = query;
+        currentSearchType = searchType;
+        currentResults = [];
+    } else {
+        // For pagination, use stored values
+        query = currentQuery;
+        searchType = currentSearchType;
+    }
     
-    // Update UI state
-    showLoading();
+    // Update UI state - only show loading indicator for new searches
+    if (isNewSearch) {
+        showLoading();
+    }
     searchButton.disabled = true;
     
     try {
-        const response = await fetch(`/api/search/commits?query=${encodeURIComponent(query)}&type=${searchType}`);
+        const response = await fetch(`/api/search/commits?query=${encodeURIComponent(query)}&type=${searchType}&page=${currentPage}&per_page=30`);
         const data = await response.json();
         
         if (!response.ok) {
             throw new Error(data.error || 'Search failed');
         }
         
-        displayResults(data, searchType);
+        // Validate API response structure
+        if (!data || typeof data !== 'object') {
+            throw new Error('Invalid API response structure');
+        }
+        
+        // Update pagination info
+        hasMoreResults = data.has_more || false;
+        
+        if (isNewSearch) {
+            console.log('Displaying new search results');
+            displayResults(data, searchType);
+        } else {
+            console.log('Appending results to existing search');
+            appendResults(data);
+        }
         
         // If searching for SHA and found exactly one commit, automatically show details with tags
-        if (searchType === 'sha' && data.commits.length === 1) {
+        if (searchType === 'sha' && data.commits.length === 1 && isNewSearch) {
             setTimeout(() => showCommitDetailsWithTags(data.commits[0]), 100);
         }
         
@@ -165,8 +204,11 @@ async function performSearch() {
         console.error('Search error:', error);
         showError(error.message || 'Failed to search commits. Please try again.');
     } finally {
-        hideLoading();
+        if (isNewSearch) {
+            hideLoading();
+        }
         searchButton.disabled = false;
+        isLoadingMore = false;
     }
 }
 
@@ -216,18 +258,153 @@ function displayResults(data, searchType) {
     // Update results header with search type indication
     const searchTypeText = searchType === 'sha' ? 'Commit ID' : 'Message Search';
     resultsTitle.textContent = `${searchTypeText} Results for "${data.query}"`;
-    resultsCount.textContent = `${data.count} commit${data.count !== 1 ? 's' : ''} found`;
+    
+    // Show total count if available
+    if (data.total_count !== undefined) {
+        resultsCount.textContent = `${data.total_count} total commit${data.total_count !== 1 ? 's' : ''} found`;
+    } else {
+        resultsCount.textContent = `${data.count} commit${data.count !== 1 ? 's' : ''} found`;
+    }
     
     // Clear previous results
     resultsList.innerHTML = '';
+    currentResults = [];
     
     // Create commit items
     data.commits.forEach(commit => {
         const commitItem = createCommitItem(commit);
         resultsList.appendChild(commitItem);
+        currentResults.push(commit);
     });
     
+    // Add load more button if there are more results
+    addLoadMoreButton();
+    
     showResults();
+}
+
+function appendResults(data) {
+    // Simple validation
+    if (!data || !data.commits || !Array.isArray(data.commits) || !resultsList) {
+        console.error('Cannot append results - invalid data or DOM elements');
+        isLoadingMore = false;
+        return;
+    }
+    
+    console.log(`Appending ${data.commits.length} new results to existing ${currentResults.length} results`);
+    
+    // Remove the current load more button before adding new items
+    const existingButton = document.getElementById('loadMoreButton');
+    if (existingButton) {
+        existingButton.remove();
+    }
+    
+    // Add each commit
+    data.commits.forEach(commit => {
+        try {
+            const commitItem = createCommitItem(commit);
+            if (commitItem) {
+                resultsList.appendChild(commitItem);
+                currentResults.push(commit);
+            }
+        } catch (error) {
+            console.error('Error creating commit item:', error);
+        }
+    });
+    
+    console.log(`Total results now: ${currentResults.length}`);
+    
+    // Update the load more button
+    addLoadMoreButton();
+}
+
+function addLoadMoreButton() {
+    if (!resultsList) return;
+    
+    // Remove existing load more button
+    const existingButton = document.getElementById('loadMoreButton');
+    if (existingButton) {
+        existingButton.remove();
+    }
+    
+    // Add load more button if there are more results
+    if (hasMoreResults && !isLoadingMore) {
+        const loadMoreContainer = document.createElement('div');
+        loadMoreContainer.id = 'loadMoreButton';
+        loadMoreContainer.className = 'load-more-container';
+        loadMoreContainer.innerHTML = `
+            <button class="load-more-btn" onclick="loadMoreResults()">
+                <i class="fas fa-arrow-down"></i>
+                Load More Results
+            </button>
+            <div class="load-more-info">
+                Showing ${currentResults.length} results
+            </div>
+        `;
+        resultsList.appendChild(loadMoreContainer);
+    }
+}
+
+async function loadMoreResults() {
+    // Simple guard clause
+    if (isLoadingMore || !hasMoreResults) return;
+    
+    isLoadingMore = true;
+    currentPage++;
+    
+    try {
+        // Show loading state in button if it exists
+        const loadMoreBtn = document.querySelector('.load-more-btn');
+        if (loadMoreBtn) {
+            loadMoreBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+            loadMoreBtn.disabled = true;
+        }
+        
+        await performSearch(false);
+        
+    } catch (error) {
+        console.error('Error loading more results:', error);
+        // Reset state on error
+        isLoadingMore = false;
+        currentPage--;
+        
+        // Reset button if it exists
+        const loadMoreBtn = document.querySelector('.load-more-btn');
+        if (loadMoreBtn) {
+            loadMoreBtn.innerHTML = '<i class="fas fa-arrow-down"></i> Load More Results';
+            loadMoreBtn.disabled = false;
+        }
+    }
+}
+
+function handleScroll() {
+    // Simple throttling - only check every 250ms
+    if (scrollTimeout) return;
+    
+    scrollTimeout = setTimeout(() => {
+        scrollTimeout = null;
+        
+        try {
+            // Only trigger infinite scroll if we have results and more are available
+            if (!hasMoreResults || isLoadingMore || currentResults.length === 0) return;
+            
+            // Simple scroll check
+            const scrollThreshold = 500; // Increased threshold for safety
+            const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+            const windowHeight = window.innerHeight;
+            const documentHeight = document.documentElement.scrollHeight;
+            
+            // Check if we're near the bottom
+            if (scrollTop + windowHeight >= documentHeight - scrollThreshold) {
+                console.log('Loading more results...');
+                loadMoreResults();
+            }
+        } catch (error) {
+            console.error('Scroll handler error:', error);
+            // Clear the timeout to prevent issues
+            scrollTimeout = null;
+        }
+    }, 250);
 }
 
 function createCommitItem(commit) {
@@ -369,6 +546,13 @@ function goHome() {
     // Hide modal if open
     hideModal();
     
+    // Reset pagination state
+    currentPage = 1;
+    currentQuery = '';
+    currentSearchType = '';
+    hasMoreResults = false;
+    isLoadingMore = false;
+    
     // Clear results and go to empty state
     clearResults();
     
@@ -392,6 +576,9 @@ function clearSearch() {
 function clearResults() {
     showEmptyState();
     currentResults = [];
+    currentPage = 1;
+    hasMoreResults = false;
+    isLoadingMore = false;
 }
 
 // Show commit details with automatic tag loading
