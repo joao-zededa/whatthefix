@@ -652,7 +652,7 @@ async function showCommitDetailsWithTags(commit) {
                     </div>
                     
                     <div class="commit-field">
-                        <div class="field-label"><i class="fas fa-user"></i> Author</div>
+                        <div class="field-label"><i class="fas fa-user"></i> Sign off by:</div>
                         <div class="field-value">${commit.author}</div>
                     </div>
                     
