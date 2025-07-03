@@ -5,21 +5,6 @@ Visit http://localhost:3000 to use the application
 ✅ Local repo up to date
 🔥 Cache warming disabled to preserve API rate limits
    Cache will be populated on first use
-🔍 Searching commits by message: "security"
-🔍 Searching commits by message: "edge"
-🔍 Searching commits by message: "download retrying"
-🔍 Searching commits by message: "download retrying"
-🔍 Searching commits by message: "2024"
-🔍 Searching commits by message: "jun 28"
-🔍 Searching commits by message: "jun"
-🔍 Searching commits by message: "download retrying"
-🔍 Searching commits by message: "download retrying"
-🔍 Searching commits by message: "milan"
-🔍 Searching commits by message: "milan download"
-🔍 Searching commits by message: "download retrying"
-🔍 Searching commits by message: "download retrying"
-🔍 Searching commits by message: "download retrying"
-🔍 Searching commits by message: "download retrying"
-🔍 Searching commits by message: "wtf.zededa.com"
-🔍 Searching commits by message: "download retrying"
-🔍 Searching commits by message: "download retrying"
+🔍 Searching by commit SHA: f63bb927d74c8e6fb04e470a6969c926aaa3f5cd
+🔍 Searching commits by message: "memory leak"
+🔍 Searching commits by message: "crash"

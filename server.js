@@ -144,6 +144,20 @@ function getTagsContainingCommitGit(sha) {
       isLTS: /lts$/i.test(name),
       semver: parseSemVer(name)
     }));
+    
+    // Sort tags by semantic version (newest first)
+    tags.sort((a, b) => {
+      // If both have semver, use semantic version comparison
+      if (a.semver && b.semver) {
+        return compareSemVer(a.semver, b.semver);
+      }
+      // If only one has semver, prioritize the one with semver
+      if (a.semver && !b.semver) return -1;
+      if (!a.semver && b.semver) return 1;
+      // If neither has semver, use string comparison
+      return b.name.localeCompare(a.name, undefined, { numeric: true });
+    });
+    
     const summary = buildTagSummary(tags);
     const payload = { tags, count: tags.length, summary };
     cache.commitTags.set(cacheKey, payload);
@@ -152,6 +166,15 @@ function getTagsContainingCommitGit(sha) {
     console.error('Git tag lookup failed:', err.message);
     return findTagsForCommit(sha).then(list => {
       const tags = list.map(t => ({ name: t.name, isLTS: /lts$/i.test(t.name), semver: parseSemVer(t.name) }));
+      // Sort the fallback tags too
+      tags.sort((a, b) => {
+        if (a.semver && b.semver) {
+          return compareSemVer(a.semver, b.semver);
+        }
+        if (a.semver && !b.semver) return -1;
+        if (!a.semver && b.semver) return 1;
+        return b.name.localeCompare(a.name, undefined, { numeric: true });
+      });
       return { tags, count: tags.length, summary: buildTagSummary(tags) };
     });
   }

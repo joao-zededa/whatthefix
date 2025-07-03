@@ -23,6 +23,12 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function initializeEventListeners() {
+    // Header click to go home
+    const headerTitle = document.querySelector('.header-content h1');
+    if (headerTitle) {
+        headerTitle.addEventListener('click', goHome);
+    }
+    
     // Search functionality
     searchButton.addEventListener('click', performSearch);
     searchInput.addEventListener('keypress', function(e) {
@@ -129,7 +135,7 @@ async function performSearch() {
     const query = searchInput.value.trim();
     
     if (!query) {
-        showError('Please enter a search query');
+        showSearchHint();
         return;
     }
 
@@ -349,6 +355,30 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+// Go home - reset everything to initial state
+function goHome() {
+    // Clear search input
+    searchInput.value = '';
+    searchInput.style.fontFamily = '';
+    searchInput.style.backgroundColor = '';
+    
+    // Remove any hint messages
+    const existingHints = document.querySelectorAll('.search-hint-message');
+    existingHints.forEach(hint => hint.remove());
+    
+    // Hide modal if open
+    hideModal();
+    
+    // Clear results and go to empty state
+    clearResults();
+    
+    // Focus search input for new search
+    searchInput.focus();
+    
+    // Clear any timeouts
+    clearTimeout(searchTimeout);
+}
+
 // Clear search and results
 function clearSearch() {
     searchInput.value = '';
@@ -444,15 +474,25 @@ async function showCommitDetailsWithTags(commit) {
         // Update the modal with beautiful tag results
         const tagsSection = document.querySelector('.tags-section');
         if (tagData.tags && tagData.tags.length > 0) {
-            const latest = tagData.summary?.latestVersion || '-';
-            const latestLTS = tagData.summary?.latestLTS || '-';
+            const latest = tagData.summary?.latestVersion || 'None';
+            const latestLTS = tagData.summary?.latestLTS || 'None';
             tagsSection.innerHTML = `
                 <div class="tags-header">
                     <h3><i class="fas fa-tags"></i> Tags Containing This Commit</h3>
-                    <div class="tags-summary">
-                        <span class="pill latest-pill" title="Latest Version">${latest}</span>
-                        <span class="pill lts-pill" title="Latest LTS">${latestLTS}</span>
-                        <label class="lts-toggle"><input type="checkbox" id="ltsOnlyToggle"> LTS only</label>
+                    <label class="lts-toggle"><input type="checkbox" id="ltsOnlyToggle"> LTS only</label>
+                </div>
+                <div class="summary-cards">
+                    <div class="summary-card latest-card">
+                        <div class="card-label">Latest Version</div>
+                        <div class="card-value">${latest}</div>
+                    </div>
+                    <div class="summary-card lts-card">
+                        <div class="card-label">Latest LTS</div>
+                        <div class="card-value">${latestLTS}</div>
+                    </div>
+                    <div class="summary-card count-card">
+                        <div class="card-label">Total Tags</div>
+                        <div class="card-value" id="tagCountDisplay">${tagData.count}</div>
                     </div>
                 </div>
                 <div class="tags-grid" id="tagsGrid">
@@ -463,13 +503,21 @@ async function showCommitDetailsWithTags(commit) {
                     `).join('')}
                 </div>
             `;
-            // Add toggle listener
+            // Add toggle listener with card updates
             document.getElementById('ltsOnlyToggle').addEventListener('change', function() {
-                const only = this.checked;
-                document.querySelectorAll('#tagsGrid .tag-card').forEach(card => {
+                const showLTSOnly = this.checked;
+                const allCards = document.querySelectorAll('#tagsGrid .tag-card');
+                let visibleCount = 0;
+                
+                allCards.forEach(card => {
                     const isLTS = card.getAttribute('data-lts') === 'true';
-                    card.style.display = (only && !isLTS) ? 'none' : 'flex';
+                    const shouldShow = !showLTSOnly || isLTS;
+                    card.style.display = shouldShow ? 'flex' : 'none';
+                    if (shouldShow) visibleCount++;
                 });
+                
+                // Update the count card
+                document.getElementById('tagCountDisplay').textContent = visibleCount;
             });
         } else {
             tagsSection.innerHTML = `
@@ -554,4 +602,55 @@ window.onclick = function(event) {
     if (event.target === modal) {
         hideModal();
     }
+}
+
+function showSearchHint() {
+    hideAllStates();
+    
+    // Remove any existing hint messages first
+    const existingHints = document.querySelectorAll('.search-hint-message');
+    existingHints.forEach(hint => hint.remove());
+    
+    // Create a friendly hint message
+    const hintElement = document.createElement('div');
+    hintElement.className = 'search-hint-message';
+    hintElement.innerHTML = `
+        <div class="hint-icon">
+            <i class="fas fa-lightbulb"></i>
+        </div>
+        <div class="hint-content">
+            <h3>Ready to Search!</h3>
+            <p>Enter a commit ID (like <code>2b7201c</code>) or search terms to find commits in the EVE-OS repository.</p>
+            <div class="hint-examples">
+                <strong>Try these examples:</strong>
+                <div class="example-hints">
+                    <span class="example-hint" onclick="fillExample('f63bb927d74c8e6fb04e470a6969c926aaa3f5cd')">f63bb927d74c8e6fb04e470a6969c926aaa3f5cd</span>
+                    <span class="example-hint" onclick="fillExample('fix crash')">fix crash</span>
+                    <span class="example-hint" onclick="fillExample('pillar')">pillar</span>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Insert after the search section
+    const searchSection = document.querySelector('.search-section');
+    searchSection.appendChild(hintElement);
+    
+    // Focus the search input
+    searchInput.focus();
+    
+    // Remove the hint after 5 seconds
+    setTimeout(() => {
+        if (hintElement.parentNode) {
+            hintElement.remove();
+        }
+    }, 5000);
+}
+
+function fillExample(example) {
+    searchInput.value = example;
+    // Remove any existing hints
+    const existingHints = document.querySelectorAll('.search-hint-message');
+    existingHints.forEach(hint => hint.remove());
+    performSearch();
 } 
