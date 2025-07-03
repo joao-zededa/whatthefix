@@ -798,22 +798,67 @@ function showSearchHint() {
     const existingHints = document.querySelectorAll('.search-hint-message');
     existingHints.forEach(hint => hint.remove());
     
-    // Create a friendly hint message
+    // Create an elegant hint message
     const hintElement = document.createElement('div');
     hintElement.className = 'search-hint-message';
     hintElement.innerHTML = `
-        <div class="hint-icon">
-            <i class="fas fa-lightbulb"></i>
+        <div class="hint-header">
+            <div class="hint-icon">
+                <i class="fas fa-search"></i>
+            </div>
+            <div class="hint-title">
+                <h3>Ready to Search</h3>
+                <p class="hint-subtitle">Find commits and track fixes across EVE-OS versions</p>
+            </div>
+            <button class="hint-close" onclick="closeSearchHint()">
+                <i class="fas fa-times"></i>
+            </button>
         </div>
-        <div class="hint-content">
-            <h3>Ready to Search!</h3>
-            <p>Enter a commit ID (like <code>2b7201c</code>) or search terms to find commits in the EVE-OS repository.</p>
+        <div class="hint-body">
+            <div class="hint-section">
+                <div class="hint-option">
+                    <div class="option-icon">
+                        <i class="fas fa-code-branch"></i>
+                    </div>
+                    <div class="option-content">
+                        <strong>Search by Commit ID</strong>
+                        <span>Enter full or partial SHA hash</span>
+                        <code class="option-example">2b7201c</code>
+                    </div>
+                </div>
+                <div class="hint-option">
+                    <div class="option-icon">
+                        <i class="fas fa-comment-dots"></i>
+                    </div>
+                    <div class="option-content">
+                        <strong>Search by Keywords</strong>
+                        <span>Find commits by message content</span>
+                        <code class="option-example">fix memory leak</code>
+                    </div>
+                </div>
+            </div>
             <div class="hint-examples">
-                <strong>Try these examples:</strong>
-                <div class="example-hints">
-                    <span class="example-hint" onclick="fillExample('f63bb927d74c8e6fb04e470a6969c926aaa3f5cd')">f63bb927d74c8e6fb04e470a6969c926aaa3f5cd</span>
-                    <span class="example-hint" onclick="fillExample('fix crash')">fix crash</span>
-                    <span class="example-hint" onclick="fillExample('pillar')">pillar</span>
+                <div class="examples-header">
+                    <i class="fas fa-play-circle"></i>
+                    <span>Quick Start Examples</span>
+                </div>
+                <div class="example-buttons">
+                    <button class="example-btn" onclick="fillExample('f63bb927d74c8e6fb04e470a6969c926aaa3f5cd')">
+                        <i class="fas fa-hashtag"></i>
+                        Sample Commit
+                    </button>
+                    <button class="example-btn" onclick="fillExample('fix crash')">
+                        <i class="fas fa-bug"></i>
+                        Fix Crash
+                    </button>
+                    <button class="example-btn" onclick="fillExample('pillar')">
+                        <i class="fas fa-cogs"></i>
+                        Pillar
+                    </button>
+                    <button class="example-btn" onclick="fillExample('security')">
+                        <i class="fas fa-shield-alt"></i>
+                        Security
+                    </button>
                 </div>
             </div>
         </div>
@@ -826,12 +871,19 @@ function showSearchHint() {
     // Focus the search input
     searchInput.focus();
     
-    // Remove the hint after 5 seconds
-    setTimeout(() => {
-        if (hintElement.parentNode) {
-            hintElement.remove();
-        }
-    }, 5000);
+    // No automatic removal - hint stays until user takes action
+}
+
+function closeSearchHint() {
+    const hintElement = document.querySelector('.search-hint-message');
+    if (hintElement) {
+        hintElement.style.animation = 'slideOutToTop 0.3s ease-in';
+        setTimeout(() => {
+            if (hintElement.parentNode) {
+                hintElement.remove();
+            }
+        }, 300);
+    }
 }
 
 function fillExample(example) {
