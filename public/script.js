@@ -7,6 +7,7 @@ let currentSearchType = '';
 let hasMoreResults = false;
 let isLoadingMore = false;
 let scrollTimeout;
+let allLoadedTags = []; // Store all loaded tags for search functionality
 
 // DOM elements - Fixed to match actual HTML structure
 const searchInput = document.getElementById('searchInput');
@@ -79,6 +80,33 @@ function initializeEventListeners() {
             performSearch();
         });
     });
+
+    // Tag search functionality in modal
+    const tagSearchInput = document.getElementById('tagSearchInput');
+    const clearTagSearch = document.getElementById('clearTagSearch');
+    
+    if (tagSearchInput) {
+        tagSearchInput.addEventListener('input', function() {
+            const query = this.value.trim();
+            filterTags(query);
+            
+            // Show/hide clear button
+            if (clearTagSearch) {
+                clearTagSearch.style.display = query ? 'block' : 'none';
+            }
+        });
+    }
+    
+    if (clearTagSearch) {
+        clearTagSearch.addEventListener('click', function() {
+            if (tagSearchInput) {
+                tagSearchInput.value = '';
+                filterTags('');
+                this.style.display = 'none';
+                tagSearchInput.focus();
+            }
+        });
+    }
 
     // Keyboard shortcuts
     document.addEventListener('keydown', function(e) {
@@ -495,11 +523,22 @@ async function loadTags() {
             tagsContainer.innerHTML = '<p class="no-tags">No tags contain this commit</p>';
         } else {
             tagsContainer.innerHTML = data.tags.map(tag => `
-                <div class="tag-item">
+                <div class="tag-item${tag.isLTS ? ' lts-tag' : ''}">
                     <span class="tag-name">${tag.name}</span>
                     ${tag.date ? `<span class="tag-date">${new Date(tag.date).toLocaleDateString()}</span>` : ''}
                 </div>
             `).join('');
+        }
+        
+        // Clear tag search when new tags are loaded
+        const tagSearchInput = document.getElementById('tagSearchInput');
+        const clearTagSearch = document.getElementById('clearTagSearch');
+        
+        if (tagSearchInput) {
+            tagSearchInput.value = '';
+        }
+        if (clearTagSearch) {
+            clearTagSearch.style.display = 'none';
         }
         
     } catch (error) {
@@ -524,6 +563,17 @@ function hideModal() {
     const modal = document.getElementById('commitModal');
     modal.style.display = 'none';
     document.body.style.overflow = '';
+    
+    // Clear tag search when modal is closed
+    const tagSearchInput = document.getElementById('tagSearchInput');
+    const clearTagSearch = document.getElementById('clearTagSearch');
+    
+    if (tagSearchInput) {
+        tagSearchInput.value = '';
+    }
+    if (clearTagSearch) {
+        clearTagSearch.style.display = 'none';
+    }
 }
 
 function escapeHtml(text) {
@@ -682,30 +732,68 @@ async function showCommitDetailsWithTags(commit) {
                         <div class="card-value" id="tagCountDisplay">${tagData.count}</div>
                     </div>
                 </div>
+                
+                <!-- Tag Search Input -->
+                <div class="tag-search-container">
+                    <input 
+                        type="text" 
+                        id="tagSearchInput" 
+                        placeholder="Search tags (e.g., 15.5, lts, rc)..."
+                        class="tag-search-input"
+                    >
+                    <button id="clearTagSearch" class="clear-tag-search" style="display: none;">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                
                 <div class="tags-grid" id="tagsGrid">
                     ${tagData.tags.map(tag => `
-                        <div class="tag-card${tag.isLTS ? ' lts' : ''}" data-lts="${tag.isLTS}">
+                        <div class="tag-card${tag.isLTS ? ' lts' : ''}" data-lts="${tag.isLTS}" data-tag-name="${tag.name.toLowerCase()}">
                             <div class="tag-name"><i class="fas fa-tag"></i> ${tag.name}</div>
                         </div>
                     `).join('')}
                 </div>
+                
+                <!-- No results message -->
+                <div id="noTagsFound" class="no-tags-found" style="display: none;">
+                    <i class="fas fa-search"></i>
+                    <p>No tags found matching your search</p>
+                </div>
             `;
             // Add toggle listener with card updates
             document.getElementById('ltsOnlyToggle').addEventListener('change', function() {
-                const showLTSOnly = this.checked;
-                const allCards = document.querySelectorAll('#tagsGrid .tag-card');
-                let visibleCount = 0;
-                
-                allCards.forEach(card => {
-                    const isLTS = card.getAttribute('data-lts') === 'true';
-                    const shouldShow = !showLTSOnly || isLTS;
-                    card.style.display = shouldShow ? 'flex' : 'none';
-                    if (shouldShow) visibleCount++;
-                });
-                
-                // Update the count card
-                document.getElementById('tagCountDisplay').textContent = visibleCount;
+                // Re-apply the current search with the new LTS filter
+                const searchInput = document.getElementById('tagSearchInput');
+                const currentQuery = searchInput ? searchInput.value.trim().toLowerCase() : '';
+                filterTagsInModal(currentQuery);
             });
+            
+            // Add search functionality
+            const tagSearchInput = document.getElementById('tagSearchInput');
+            const clearTagSearch = document.getElementById('clearTagSearch');
+            
+            if (tagSearchInput) {
+                tagSearchInput.addEventListener('input', function() {
+                    const query = this.value.trim().toLowerCase();
+                    filterTagsInModal(query);
+                    
+                    // Show/hide clear button
+                    if (clearTagSearch) {
+                        clearTagSearch.style.display = query ? 'block' : 'none';
+                    }
+                });
+            }
+            
+            if (clearTagSearch) {
+                clearTagSearch.addEventListener('click', function() {
+                    if (tagSearchInput) {
+                        tagSearchInput.value = '';
+                        filterTagsInModal('');
+                        this.style.display = 'none';
+                        tagSearchInput.focus();
+                    }
+                });
+            }
         } else {
             tagsSection.innerHTML = `
                 <div class="tags-header">
@@ -892,4 +980,127 @@ function fillExample(example) {
     const existingHints = document.querySelectorAll('.search-hint-message');
     existingHints.forEach(hint => hint.remove());
     performSearch();
+}
+
+// Filter tags based on search query
+function filterTags(query) {
+    const tagsList = document.getElementById('tagsList');
+    const noTagsFound = document.getElementById('noTagsFound');
+    const tagCount = document.getElementById('tagCount');
+    
+    if (!tagsList || !tagCount) return;
+    
+    const tagItems = tagsList.querySelectorAll('.tag-item');
+    let visibleCount = 0;
+    
+    if (!query) {
+        // Show all tags
+        tagItems.forEach(item => {
+            item.classList.remove('hidden', 'highlight');
+        });
+        visibleCount = tagItems.length;
+    } else {
+        const queryLower = query.toLowerCase();
+        
+        tagItems.forEach(item => {
+            const tagName = item.querySelector('.tag-name');
+            if (tagName) {
+                const tagNameText = tagName.textContent.toLowerCase();
+                
+                // Check if tag matches search query
+                const matches = tagNameText.includes(queryLower) || 
+                              (queryLower === 'lts' && item.classList.contains('lts-tag')) ||
+                              (queryLower === 'rc' && tagNameText.includes('rc'));
+                
+                if (matches) {
+                    item.classList.remove('hidden');
+                    item.classList.add('highlight');
+                    visibleCount++;
+                } else {
+                    item.classList.add('hidden');
+                    item.classList.remove('highlight');
+                }
+            }
+        });
+    }
+    
+    // Update count
+    tagCount.textContent = visibleCount;
+    
+    // Show/hide no results message
+    if (noTagsFound) {
+        noTagsFound.style.display = visibleCount === 0 && query ? 'block' : 'none';
+    }
+    
+    // Hide tags list if no results
+    tagsList.style.display = visibleCount === 0 && query ? 'none' : 'block';
+}
+
+// Filter tags in the modal based on search query
+function filterTagsInModal(query) {
+    const tagsGrid = document.getElementById('tagsGrid');
+    const noTagsFound = document.getElementById('noTagsFound');
+    const tagCountDisplay = document.getElementById('tagCountDisplay');
+    const ltsToggle = document.getElementById('ltsOnlyToggle');
+    
+    if (!tagsGrid || !tagCountDisplay) return;
+    
+    const tagCards = tagsGrid.querySelectorAll('.tag-card');
+    const showLTSOnly = ltsToggle ? ltsToggle.checked : false;
+    let visibleCount = 0;
+    
+    tagCards.forEach(card => {
+        const tagName = card.getAttribute('data-tag-name') || '';
+        const isLTS = card.getAttribute('data-lts') === 'true';
+        
+        // Check if tag matches search query
+        let matchesSearch = true;
+        if (query) {
+            const queryLower = query.toLowerCase();
+            matchesSearch = tagName.includes(queryLower) || 
+                          (queryLower === 'lts' && isLTS) ||
+                          (queryLower === 'rc' && tagName.includes('rc'));
+        }
+        
+        // Check if tag matches LTS filter
+        const matchesLTSFilter = !showLTSOnly || isLTS;
+        
+        // Show tag if it matches both search and LTS filter
+        const shouldShow = matchesSearch && matchesLTSFilter;
+        
+        if (shouldShow) {
+            card.classList.remove('hidden');
+            card.classList.toggle('highlight', !!query);
+            card.style.display = 'flex';
+            visibleCount++;
+        } else {
+            card.classList.add('hidden');
+            card.classList.remove('highlight');
+            card.style.display = 'none';
+        }
+    });
+    
+    // Update count
+    tagCountDisplay.textContent = visibleCount;
+    
+    // Show/hide no results message
+    if (noTagsFound) {
+        noTagsFound.style.display = visibleCount === 0 && (query || showLTSOnly) ? 'block' : 'none';
+    }
+    
+    // Show/hide tags grid and reset layout properly
+    if (visibleCount === 0 && (query || showLTSOnly)) {
+        tagsGrid.style.display = 'none';
+    } else {
+        tagsGrid.style.display = 'flex';
+        // Reset to original grid layout when no search/filter is active
+        if (!query && !showLTSOnly) {
+            tagsGrid.style.flexDirection = '';
+            tagsGrid.style.flexWrap = '';
+            // Remove any inline styles that might interfere
+            tagsGrid.style.gap = '';
+            tagsGrid.style.maxHeight = '';
+            tagsGrid.style.overflowY = '';
+        }
+    }
 } 

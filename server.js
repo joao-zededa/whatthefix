@@ -462,6 +462,74 @@ async function searchCommits(query, type = 'message', page = 1, perPage = 30) {
   }
 }
 
+// Search for tags by name or pattern
+async function searchTags(query, page = 1, perPage = 30) {
+  try {
+    console.log(`🔍 Searching tags by name: "${query}" (page ${page})`);
+    
+    // Get all tags (cached)
+    const allTags = await getAllTags();
+    
+    // Filter tags based on query
+    const queryLower = query.toLowerCase();
+    const filteredTags = allTags.filter(tag => {
+      const tagNameLower = tag.name.toLowerCase();
+      
+      // Support different search patterns
+      if (query.includes('*')) {
+        // Simple wildcard support
+        const pattern = query.replace(/\*/g, '.*');
+        const regex = new RegExp(pattern, 'i');
+        return regex.test(tag.name);
+      } else {
+        // Simple substring match
+        return tagNameLower.includes(queryLower);
+      }
+    });
+    
+    // Sort tags by semantic version (newest first) and then by name
+    filteredTags.sort((a, b) => {
+      const aVersion = parseSemVer(a.name);
+      const bVersion = parseSemVer(b.name);
+      
+      if (aVersion && bVersion) {
+        return compareSemVer(aVersion, bVersion);
+      }
+      
+      // If one has semver and other doesn't, prioritize semver
+      if (aVersion && !bVersion) return -1;
+      if (!aVersion && bVersion) return 1;
+      
+      // Fallback to string comparison for non-semantic versions
+      return b.name.localeCompare(a.name, undefined, { numeric: true });
+    });
+    
+    // Implement pagination
+    const startIndex = (page - 1) * perPage;
+    const endIndex = startIndex + perPage;
+    const paginatedTags = filteredTags.slice(startIndex, endIndex);
+    
+    // Format tags for response
+    const formattedTags = paginatedTags.map(tag => ({
+      name: tag.name,
+      sha: tag.commit.sha,
+      date: tag.commit?.commit?.author?.date || null,
+      url: tag.zipball_url,
+      isLTS: /lts$/i.test(tag.name),
+      semver: parseSemVer(tag.name)
+    }));
+    
+    return {
+      tags: formattedTags,
+      total_count: filteredTags.length,
+      has_more: endIndex < filteredTags.length
+    };
+  } catch (error) {
+    console.error('Error searching tags:', error.message);
+    throw error;
+  }
+}
+
 // API Routes
 app.get('/api/search/commits', async (req, res) => {
   try {
@@ -501,6 +569,93 @@ app.get('/api/search/commits', async (req, res) => {
     console.error('Search error:', error.message);
     res.status(500).json({ 
       error: 'Failed to search commits',
+      message: error.message 
+    });
+  }
+});
+
+// API endpoint for searching tags
+app.get('/api/search/tags', async (req, res) => {
+  try {
+    const { query, page = 1, per_page = 30 } = req.query;
+    
+    if (!query) {
+      return res.status(400).json({ error: 'Query parameter is required' });
+    }
+
+    const pageNum = parseInt(page) || 1;
+    const perPageNum = Math.min(parseInt(per_page) || 30, 100); // Max 100 per page
+    
+    const searchResult = await searchTags(query, pageNum, perPageNum);
+    
+    res.json({
+      query,
+      page: pageNum,
+      per_page: perPageNum,
+      count: searchResult.tags.length,
+      total_count: searchResult.total_count,
+      has_more: searchResult.has_more,
+      tags: searchResult.tags
+    });
+  } catch (error) {
+    console.error('Tag search error:', error.message);
+    res.status(500).json({ 
+      error: 'Failed to search tags',
+      message: error.message 
+    });
+  }
+});
+
+// API endpoint to get all tags with optional filtering
+app.get('/api/tags', async (req, res) => {
+  try {
+    const { lts_only = false, limit = 50 } = req.query;
+    
+    let allTags = await getAllTags();
+    
+    // Filter for LTS tags if requested
+    if (lts_only === 'true') {
+      allTags = allTags.filter(tag => /lts$/i.test(tag.name));
+    }
+    
+    // Sort by semantic version (newest first)
+    allTags.sort((a, b) => {
+      const aVersion = parseSemVer(a.name);
+      const bVersion = parseSemVer(b.name);
+      
+      if (aVersion && bVersion) {
+        return compareSemVer(aVersion, bVersion);
+      }
+      
+      if (aVersion && !bVersion) return -1;
+      if (!aVersion && bVersion) return 1;
+      
+      return b.name.localeCompare(a.name, undefined, { numeric: true });
+    });
+    
+    // Limit results
+    const limitNum = parseInt(limit) || 50;
+    const limitedTags = allTags.slice(0, limitNum);
+    
+    // Format tags for response
+    const formattedTags = limitedTags.map(tag => ({
+      name: tag.name,
+      sha: tag.commit.sha,
+      date: tag.commit?.commit?.author?.date || null,
+      url: tag.zipball_url,
+      isLTS: /lts$/i.test(tag.name),
+      semver: parseSemVer(tag.name)
+    }));
+    
+    res.json({
+      count: formattedTags.length,
+      total_available: allTags.length,
+      tags: formattedTags
+    });
+  } catch (error) {
+    console.error('Tags fetch error:', error.message);
+    res.status(500).json({ 
+      error: 'Failed to fetch tags',
       message: error.message 
     });
   }

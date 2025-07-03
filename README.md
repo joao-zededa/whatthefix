@@ -89,7 +89,7 @@ npm run dev
 5. **Open your browser**
 Navigate to `http://localhost:3000`
 
-The first startup will clone the EVE-OS repository locally for fast tag analysis.
+The first startup will clone the EVE-OS repository locally for fast tag analysis. Since this will be hosted on a
 
 ## 📖 Usage Guide
 
@@ -300,9 +300,6 @@ whatthefix/
 - Check internet connectivity and disk space
 - Verify git is installed and accessible
 
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 

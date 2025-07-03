@@ -129,8 +129,28 @@
                     <!-- Results -->
                     <div id="tagsLoaded" style="display: none;">
                         <h5><i class="fas fa-tag"></i> Found <span id="tagCount">0</span> tags</h5>
+                        
+                        <!-- Tag Search Input -->
+                        <div class="tag-search-container">
+                            <input 
+                                type="text" 
+                                id="tagSearchInput" 
+                                placeholder="Search tags (e.g., 15.5, lts, rc)..."
+                                class="tag-search-input"
+                            >
+                            <button id="clearTagSearch" class="clear-tag-search" style="display: none;">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        
                         <div id="tagsList" class="tags-list">
                             <!-- Tags will be loaded here -->
+                        </div>
+                        
+                        <!-- No results message -->
+                        <div id="noTagsFound" class="no-tags-found" style="display: none;">
+                            <i class="fas fa-search"></i>
+                            <p>No tags found matching your search</p>
                         </div>
                     </div>
                 </div>
