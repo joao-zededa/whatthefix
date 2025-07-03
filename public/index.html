@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EVE-OS Fix Finder</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="header-content">
+                <h1 class="title">
+                    <i class="fas fa-code-branch"></i>
+                    EVE-OS Fix Finder
+                </h1>
+                <p class="subtitle">Search for fixes and commits in the EVE-OS repository</p>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <div class="search-section">
+                <div class="search-container">
+                    <div class="search-input-container">
+                        <input 
+                            type="text" 
+                            id="searchInput" 
+                            placeholder="Enter commit message keywords or commit ID..."
+                            class="search-input"
+                        >
+                        <button id="searchButton" class="search-button">
+                            <i class="fas fa-search"></i>
+                            Search
+                        </button>
+                    </div>
+                    <div class="search-hint">
+                        <i class="fas fa-lightbulb"></i>
+                        <span>Automatically detects commit IDs (SHA) or searches by message keywords</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="results-section">
+                <div id="loadingIndicator" class="loading-indicator hidden">
+                    <div class="spinner"></div>
+                    <p>Searching EVE-OS repository...</p>
+                </div>
+
+                <div id="errorMessage" class="error-message hidden">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <p id="errorText"></p>
+                </div>
+
+                <div id="resultsContainer" class="results-container hidden">
+                    <div class="results-header">
+                        <h2 id="resultsTitle">Search Results</h2>
+                        <div id="resultsCount" class="results-count"></div>
+                    </div>
+                    <div id="resultsList" class="results-list"></div>
+                </div>
+
+                <div id="emptyState" class="empty-state">
+                    <i class="fas fa-search"></i>
+                    <h3>Search EVE-OS Fixes</h3>
+                    <p>Enter a commit message keyword or commit ID to find fixes in the EVE-OS repository.</p>
+                    <div class="examples">
+                        <h4>Examples:</h4>
+                        <div class="example-tags">
+                            <span class="example-tag" data-example="fix">fix</span>
+                            <span class="example-tag" data-example="security">security</span>
+                            <span class="example-tag" data-example="memory leak">memory leak</span>
+                            <span class="example-tag" data-example="crash">crash</span>
+                            <span class="example-tag" data-example="6e2251880163549c48438e7881fb1c6bac3c83a8">commit ID</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Commit Detail Modal -->
+    <div id="commitModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Commit Details</h3>
+                <button id="closeModal" class="close-button">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div id="commitDetails" class="modal-body">
+                <!-- Commit details will be loaded here -->
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html> 
