@@ -790,7 +790,7 @@ body {
 .commit-detail {
     margin-bottom: 25px;
     padding-bottom: 20px;
-    border-bottom: 1px solid #e9ecef;
+    border-bottom: 1px solid rgba(42, 255, 223, 0.2);
 }
 
 .commit-detail:last-child {
@@ -799,7 +799,7 @@ body {
 }
 
 .commit-detail h4 {
-    color: #495057;
+    color: #9EFFFF;
     font-size: 1.1em;
     font-weight: 600;
     margin-bottom: 10px;
@@ -809,7 +809,7 @@ body {
 }
 
 .commit-detail h5 {
-    color: #495057;
+    color: #9EFFFF;
     font-size: 1em;
     font-weight: 600;
     margin-bottom: 15px;
@@ -820,8 +820,17 @@ body {
 
 .commit-detail h4 i,
 .commit-detail h5 i {
-    color: #667eea;
+    color: #2AFFDF;
     width: 20px;
+}
+
+.action-note {
+    display: block;
+    margin-top: 8px;
+    color: #9EFFFF;
+    opacity: 0.7;
+    font-style: italic;
+    font-size: 0.85em;
 }
 
 /* Analysis completion indicator */
@@ -1841,4 +1850,264 @@ body {
 
 .tag-card.highlight {
     /* No highlighting styles - removed per user request */
+}
+
+/* Backport Analysis Styles */
+.backport-actions {
+    margin-top: 10px;
+}
+
+.analyze-backports-button {
+    background: linear-gradient(135deg, #FF9D00 0%, #ffc600 100%);
+    color: #15232D;
+    border: none;
+    padding: 12px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 200px;
+    justify-content: center;
+}
+
+.analyze-backports-button:hover {
+    background: linear-gradient(135deg, #ffc600 0%, #FF9D00 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(255, 157, 0, 0.3);
+}
+
+.analyze-backports-button:disabled {
+    background: #6c757d;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.analyze-backports-button i {
+    font-size: 16px;
+}
+
+.backport-results-section {
+    background: rgba(42, 255, 223, 0.05);
+    border: 1px solid rgba(42, 255, 223, 0.2);
+    border-radius: 12px;
+    padding: 20px;
+    margin-top: 20px;
+}
+
+.backport-summary {
+    margin-bottom: 20px;
+}
+
+.backport-summary .summary-cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.backport-summary .summary-card {
+    background: rgba(21, 35, 45, 0.3);
+    border: 1px solid rgba(42, 255, 223, 0.2);
+    border-radius: 8px;
+    padding: 15px;
+    text-align: center;
+}
+
+.backport-summary .card-value {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: #2AFFDF;
+    margin-bottom: 5px;
+}
+
+.backport-summary .card-label {
+    font-size: 0.9rem;
+    color: #9EFFFF;
+    opacity: 0.8;
+}
+
+.backport-commits-list {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid rgba(42, 255, 223, 0.2);
+    border-radius: 8px;
+    background: rgba(21, 35, 45, 0.2);
+}
+
+.backport-commit-item {
+    padding: 15px;
+    border-bottom: 1px solid rgba(42, 255, 223, 0.1);
+    transition: background 0.3s ease;
+}
+
+.backport-commit-item:hover {
+    background: rgba(42, 255, 223, 0.1);
+}
+
+.backport-commit-item:last-child {
+    border-bottom: none;
+}
+
+.backport-commit-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 10px;
+}
+
+.backport-commit-info {
+    flex: 1;
+}
+
+.backport-commit-sha {
+    font-family: Monaco, monospace;
+    font-size: 0.9rem;
+    color: #2AFFDF;
+    font-weight: 600;
+}
+
+.backport-commit-branch {
+    display: inline-block;
+    background: rgba(255, 157, 0, 0.2);
+    color: #FF9D00;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    margin-left: 10px;
+}
+
+.backport-commit-confidence {
+    font-size: 0.8rem;
+    margin-left: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+}
+
+.backport-commit-confidence.high-confidence {
+    background: rgba(46, 204, 113, 0.2);
+    color: #2ecc71;
+    border: 1px solid rgba(46, 204, 113, 0.3);
+}
+
+.backport-commit-confidence.medium-confidence {
+    background: rgba(255, 198, 0, 0.2);
+    color: #ffc600;
+    border: 1px solid rgba(255, 198, 0, 0.3);
+}
+
+.backport-commit-confidence.low-confidence {
+    background: rgba(231, 76, 60, 0.2);
+    color: #e74c3c;
+    border: 1px solid rgba(231, 76, 60, 0.3);
+}
+
+.backport-commit-message {
+    color: #9EFFFF;
+    font-size: 0.9rem;
+    margin-bottom: 8px;
+    line-height: 1.4;
+}
+
+.backport-commit-meta {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    font-size: 0.8rem;
+    color: #9EFFFF;
+    opacity: 0.7;
+}
+
+.backport-commit-tags {
+    margin-top: 10px;
+}
+
+.backport-tags-label {
+    font-size: 0.8rem;
+    color: #9EFFFF;
+    opacity: 0.8;
+    margin-bottom: 5px;
+}
+
+.backport-tags-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.backport-tag {
+    background: rgba(159, 255, 255, 0.1);
+    border: 1px solid rgba(159, 255, 255, 0.3);
+    color: #9EFFFF;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.backport-tag.lts {
+    background: rgba(255, 198, 0, 0.2);
+    border-color: rgba(255, 198, 0, 0.5);
+    color: #ffc600;
+}
+
+.no-backports-message {
+    text-align: center;
+    padding: 40px 20px;
+    color: #9EFFFF;
+    opacity: 0.7;
+}
+
+.no-backports-message i {
+    font-size: 3rem;
+    margin-bottom: 15px;
+    color: #2AFFDF;
+}
+
+.no-backports-message h3 {
+    color: #2AFFDF;
+    margin-bottom: 10px;
+}
+
+.loading-backports {
+    text-align: center;
+    padding: 40px 20px;
+    color: #9EFFFF;
+}
+
+.loading-backports i {
+    font-size: 2rem;
+    margin-bottom: 15px;
+    color: #2AFFDF;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Responsive adjustments for backport analysis */
+@media (max-width: 768px) {
+    .backport-summary .summary-cards {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+    
+    .backport-commit-header {
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    .backport-commit-meta {
+        flex-direction: column;
+        gap: 5px;
+        align-items: flex-start;
+    }
 } 

@@ -8,6 +8,8 @@ let hasMoreResults = false;
 let isLoadingMore = false;
 let scrollTimeout;
 let allLoadedTags = []; // Store all loaded tags for search functionality
+let currentCommitSha = '';
+let currentBackportData = null;
 
 // DOM elements - Fixed to match actual HTML structure
 const searchInput = document.getElementById('searchInput');
@@ -554,6 +556,187 @@ async function loadTags() {
     }
 }
 
+// Analyze backports for the current commit
+async function analyzeBackports() {
+    if (!currentCommit) return;
+    
+    const backportButton = document.querySelector('.analyze-backports-button');
+    const backportResults = document.getElementById('backportResults');
+    
+    if (!backportButton || !backportResults) return;
+    
+    // Update button to show loading state
+    backportButton.disabled = true;
+    backportButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Analyzing Backports...';
+    
+    // Show the results section with loading state
+    backportResults.style.display = 'block';
+    backportResults.innerHTML = `
+        <h4><i class="fas fa-code-branch"></i> Backport Analysis</h4>
+        <div class="loading-backports">
+            <i class="fas fa-spinner fa-spin"></i>
+            <p>Analyzing backports across stable branches...</p>
+            <small>This may take a moment to search all stable branches</small>
+        </div>
+    `;
+    
+    try {
+        console.log('Analyzing backports for commit:', currentCommit.sha);
+        const startTime = Date.now();
+        
+        const response = await fetch(`/api/commits/${currentCommit.sha}/backports`);
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to analyze backports');
+        }
+        
+        const endTime = Date.now();
+        const duration = Math.round((endTime - startTime) / 1000);
+        
+        console.log(`Found ${data.summary.totalBackports} backports in ${duration} seconds`);
+        
+        // Store the data globally
+        currentBackportData = data;
+        
+        // Display results
+        displayBackportResults(data);
+        
+        // Update button to show success state
+        backportButton.innerHTML = '<i class="fas fa-check"></i> Analysis Complete';
+        backportButton.disabled = false;
+        
+    } catch (error) {
+        console.error('Failed to analyze backports:', error);
+        
+        // Show error state
+        backportResults.innerHTML = `
+            <h4><i class="fas fa-code-branch"></i> Backport Analysis</h4>
+            <div class="no-backports-message">
+                <i class="fas fa-exclamation-triangle"></i>
+                <h3>Analysis Failed</h3>
+                <p>Failed to analyze backports: ${error.message}</p>
+                <button onclick="analyzeBackports()" class="analyze-backports-button">
+                    <i class="fas fa-redo"></i>
+                    Retry Analysis
+                </button>
+            </div>
+        `;
+        
+        // Reset button
+        backportButton.innerHTML = '<i class="fas fa-project-diagram"></i> Find Backported Commits';
+        backportButton.disabled = false;
+    }
+}
+
+// Display backport analysis results
+function displayBackportResults(data) {
+    const backportResults = document.getElementById('backportResults');
+    if (!backportResults) return;
+    
+    const { originalCommit, backportedCommits, summary } = data;
+    
+    if (backportedCommits.length === 0) {
+        backportResults.innerHTML = `
+            <h4><i class="fas fa-code-branch"></i> Backport Analysis</h4>
+            <div class="no-backports-message">
+                <i class="fas fa-info-circle"></i>
+                <h3>No Backports Found</h3>
+                <p>This commit does not appear to have been backported to any stable branches.</p>
+                <small>This could mean it's only available in the main development branch.</small>
+            </div>
+        `;
+        return;
+    }
+    
+    // Generate the results HTML
+    backportResults.innerHTML = `
+        <h4><i class="fas fa-code-branch"></i> Backport Analysis Results</h4>
+        <div class="backport-summary">
+            <div class="summary-cards">
+                <div class="summary-card">
+                    <div class="card-value" id="backportCount">${summary.totalBackports}</div>
+                    <div class="card-label">Backports Found</div>
+                </div>
+                <div class="summary-card">
+                    <div class="card-value" id="branchCount">${summary.branchesWithBackports}</div>
+                    <div class="card-label">Stable Branches</div>
+                </div>
+                <div class="summary-card">
+                    <div class="card-value" id="tagCount">${summary.totalTagsAcrossBackports}</div>
+                    <div class="card-label">Total Tags</div>
+                </div>
+            </div>
+        </div>
+        <div id="backportCommitsList" class="backport-commits-list">
+            ${backportedCommits.map(commit => createBackportCommitItem(commit)).join('')}
+        </div>
+    `;
+}
+
+// Create a backport commit item
+function createBackportCommitItem(commit) {
+    const commitDate = new Date(commit.date).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+    });
+    
+    // Handle both old format (similarity) and new format (confidence)
+    const confidencePercent = Math.round((commit.confidence || commit.similarity || 0) * 100);
+    
+    // Determine method display
+    const methodLabels = {
+        'explicit_reference': 'Explicit Reference',
+        'cherry_pick_reference': 'Cherry-pick',
+        'similarity_match': 'Message Similarity'
+    };
+    const methodLabel = methodLabels[commit.method] || 'Detection Method';
+    
+    // Color code by confidence level
+    let confidenceClass = 'low-confidence';
+    if (confidencePercent >= 90) {
+        confidenceClass = 'high-confidence';
+    } else if (confidencePercent >= 80) {
+        confidenceClass = 'medium-confidence';
+    }
+    
+    const tagsHtml = commit.tags.length > 0 
+        ? `<div class="backport-commit-tags">
+             <div class="backport-tags-label">Tags containing this backport:</div>
+             <div class="backport-tags-container">
+               ${commit.tags.map(tag => `
+                 <span class="backport-tag${tag.isLTS ? ' lts' : ''}">${tag.name}</span>
+               `).join('')}
+             </div>
+           </div>`
+        : `<div class="backport-commit-tags">
+             <div class="backport-tags-label">No tags found for this backport</div>
+           </div>`;
+    
+    return `
+        <div class="backport-commit-item">
+            <div class="backport-commit-header">
+                <div class="backport-commit-info">
+                    <span class="backport-commit-sha">${commit.sha.substring(0, 8)}</span>
+                    <span class="backport-commit-branch">${commit.branch}</span>
+                    <span class="backport-commit-confidence ${confidenceClass}" title="${methodLabel}">
+                        ${confidencePercent}% confidence
+                    </span>
+                </div>
+            </div>
+            <div class="backport-commit-message">${escapeHtml(commit.message.split('\n')[0])}</div>
+            <div class="backport-commit-meta">
+                <span><i class="fas fa-user"></i> ${escapeHtml(commit.author)}</span>
+                <span><i class="fas fa-calendar"></i> ${commitDate}</span>
+                <span><i class="fas fa-search"></i> ${methodLabel}</span>
+                <span><i class="fas fa-external-link-alt"></i> <a href="${commit.url}" target="_blank" style="color: inherit;">View on GitHub</a></span>
+            </div>
+            ${tagsHtml}
+        </div>
+    `;
+}
+
 function showModal() {
     commitModal.classList.remove('hidden');
     document.body.style.overflow = 'hidden';
@@ -633,6 +816,7 @@ function clearResults() {
 
 // Show commit details with automatic tag loading
 async function showCommitDetailsWithTags(commit) {
+    currentCommit = commit; // Store for backport analysis
     const modal = document.getElementById('commitModal');
     
     // Show beautiful commit details immediately
@@ -676,6 +860,23 @@ async function showCommitDetailsWithTags(commit) {
                             <i class="fas fa-external-link-alt"></i> View on GitHub
                         </a>
                     </div>
+                </div>
+                
+                <!-- Backport Analysis Section -->
+                <div class="commit-detail">
+                    <h4><i class="fas fa-code-branch"></i> Backport Analysis</h4>
+                    <div class="backport-actions">
+                        <button onclick="analyzeBackports()" class="analyze-backports-button">
+                            <i class="fas fa-project-diagram"></i>
+                            Find Backported Commits
+                        </button>
+                        <small class="action-note">Find all backported versions of this commit across stable branches</small>
+                    </div>
+                </div>
+                
+                <!-- Backport Results Section -->
+                <div id="backportResults" class="commit-detail backport-results-section" style="display: none;">
+                    <!-- Results will be populated here -->
                 </div>
                 
                 <div class="tags-section">
