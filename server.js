@@ -4,7 +4,9 @@ const axios = require('axios');
 const path = require('path');
 require('dotenv').config();
 const fs = require('fs');
-const { execSync } = require('child_process');
+const { execSync, exec } = require('child_process');
+const { promisify } = require('util');
+const execAsync = promisify(exec);
 const os = require('os');
 
 const app = express();
@@ -61,6 +63,13 @@ const getGitHubHeaders = () => {
   return headers;
 };
 
+// Allow custom Accept header for preview APIs
+function getGitHubHeadersWithAccept(acceptHeader) {
+  const headers = getGitHubHeaders();
+  if (acceptHeader) headers['Accept'] = acceptHeader;
+  return headers;
+}
+
 // Helper function to add delay between API calls
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -76,6 +85,25 @@ async function makeGitHubRequest(url, params = {}) {
       params,
       headers: getGitHubHeaders(),
       timeout: 15000 // Increased timeout
+    });
+    return response;
+  } catch (error) {
+    if (error.response && error.response.status === 403) {
+      console.error('GitHub API rate limit exceeded. Consider adding a GITHUB_TOKEN to your .env file');
+      throw new Error('API rate limit exceeded. Please try again later or contact administrator.');
+    }
+    throw error;
+  }
+}
+
+// Helper to make GitHub API requests with extra headers
+async function makeGitHubRequestCustom(url, params = {}, extraHeaders = {}) {
+  try {
+    await delay(RATE_LIMIT_DELAY);
+    const response = await axios.get(url, {
+      params,
+      headers: { ...getGitHubHeaders(), ...extraHeaders },
+      timeout: 15000
     });
     return response;
   } catch (error) {
@@ -471,52 +499,416 @@ async function findBackportedCommits(originalCommitSha, originalCommitMessage) {
   
   try {
     console.log(`🔍 Looking for backported commits of ${originalCommitSha.substring(0, 8)}...`);
-    
+
+    // FAST PATH A: PR commit titles matched on stable branches (local git)
+    if (fs.existsSync(path.join(LOCAL_REPO_PATH, '.git'))) {
+      try {
+        const prTitleResults = await findBackportsViaPRTitles(originalCommitSha);
+        if (prTitleResults.length > 0) {
+          const unique = removeDuplicateBackports(prTitleResults);
+          unique.sort((a, b) => new Date(b.date) - new Date(a.date));
+          backportCache.backportedCommits.set(cacheKey, unique);
+          console.log(`⚡ PR-title scan found ${unique.length} backports for ${originalCommitSha.substring(0, 8)}`);
+          return unique;
+        }
+      } catch (ptErr) {
+        console.warn('⚠️ PR-title fast scan failed:', ptErr.message);
+      }
+    }
+
+    // FAST PATH B: Use local git to search backports across stable branches
+    if (fs.existsSync(path.join(LOCAL_REPO_PATH, '.git'))) {
+      try {
+        const fastResults = await findBackportedCommitsLocal(originalCommitSha, originalCommitMessage);
+        // Cache the results
+        backportCache.backportedCommits.set(cacheKey, fastResults);
+        console.log(`⚡ Fast local scan found ${fastResults.length} backports for ${originalCommitSha.substring(0, 8)}`);
+        return fastResults;
+      } catch (localError) {
+        console.warn('⚠️ Fast local backport scan failed, falling back to API search:', localError.message);
+      }
+    }
+
+    // PR-BASED STRATEGY: Use PR associations and stable branch merged PRs
+    try {
+      const prStrategyResults = await findBackportsViaPRs(originalCommitSha);
+      if (prStrategyResults.length > 0) {
+        const unique = removeDuplicateBackports(prStrategyResults);
+        unique.sort((a, b) => new Date(b.date) - new Date(a.date));
+        backportCache.backportedCommits.set(cacheKey, unique);
+        console.log(`🧭 PR strategy found ${unique.length} backports for ${originalCommitSha.substring(0, 8)}`);
+        return unique;
+      }
+    } catch (prError) {
+      console.warn('⚠️ PR-based backport strategy failed:', prError.message);
+    }
+
+    // SLOWER FALLBACK: Existing API-based approach
     const stableBranches = await getStableBranches();
     const backportedCommits = [];
-    
-    // Get the original commit details and any associated PR
     const originalPR = await findPRForCommit(originalCommitSha);
-    
+
     for (const branch of stableBranches) {
       try {
         console.log(`🔍 Searching in branch ${branch.name}...`);
-        
-        // Method 1: Look for explicit backport references
+
         const explicitBackports = await findExplicitBackports(originalCommitSha, originalPR, branch.name);
         backportedCommits.push(...explicitBackports);
-        
-        // Method 2: Look for cherry-pick references in commit messages
+
         const cherryPickBackports = await findCherryPickBackports(originalCommitSha, branch.name);
         backportedCommits.push(...cherryPickBackports);
-        
-        // Method 3: Look for similar commit messages (fallback)
+
         const similarCommits = await findSimilarCommits(originalCommitMessage, originalCommitSha, branch.name);
         backportedCommits.push(...similarCommits);
-        
-        // Small delay to avoid rate limiting
+
         await delay(300);
-        
       } catch (error) {
         console.warn(`⚠️ Failed to search branch ${branch.name}:`, error.message);
         continue;
       }
     }
-    
-    // Remove duplicates and sort by date
+
     const uniqueBackports = removeDuplicateBackports(backportedCommits);
     uniqueBackports.sort((a, b) => new Date(b.date) - new Date(a.date));
-    
-    // Cache the results
     backportCache.backportedCommits.set(cacheKey, uniqueBackports);
-    
     console.log(`🎉 Found ${uniqueBackports.length} backported commits for ${originalCommitSha.substring(0, 8)}`);
     return uniqueBackports;
-    
   } catch (error) {
     console.error('Error finding backported commits:', error.message);
     throw error;
   }
+}
+
+// SUPER-FAST: Local git backport discovery across stable branches
+async function findBackportedCommitsLocal(originalCommitSha, originalCommitMessage) {
+  const shortSha = originalCommitSha.substring(0, 8);
+  // Ensure remotes are fresh
+  try {
+    execSync('git fetch --all --tags --quiet', { cwd: LOCAL_REPO_PATH });
+  } catch (_) {}
+  const branches = await getLocalStableBranches();
+
+  if (branches.length === 0) {
+    return [];
+  }
+
+  const maxPerBranch = 4000; // safety cap
+  const grepArgs = [
+    `--grep=cherry picked from commit ${originalCommitSha}`,
+    `--grep=cherry picked from commit ${shortSha}`,
+    `--grep=${originalCommitSha}`,
+    `--grep=${shortSha}`
+  ];
+
+  // Run branch scans with limited concurrency
+  const concurrency = Math.min(6, Math.max(2, os.cpus()?.length || 4));
+  const tasks = branches.map(branchName => async () => {
+    const ref = `origin/${branchName}`;
+    const cmd = `git log ${ref} --no-merges -i --date=iso --pretty=format:%H%x01%an%x01%ad%x01%s -n ${maxPerBranch} ${grepArgs.map(a => `--grep="${a.replace(/"/g, '\\"')}"`).join(' ')}`;
+    try {
+      const { stdout } = await execAsync(cmd, { cwd: LOCAL_REPO_PATH, maxBuffer: 1024 * 1024 * 64 });
+      if (!stdout) return [];
+      return stdout.split('\n').filter(Boolean).map(line => {
+        const [sha, author, date, subject] = line.split('\u0001');
+        const lower = subject ? subject.toLowerCase() : '';
+        let confidence = 0.8;
+        let method = 'explicit_reference';
+        if (lower.includes(`cherry picked from commit ${originalCommitSha.toLowerCase()}`) ||
+            lower.includes(`cherry picked from commit ${shortSha.toLowerCase()}`)) {
+          confidence = 0.95;
+          method = 'cherry_pick_reference';
+        } else if (lower.includes(shortSha.toLowerCase()) || lower.includes(originalCommitSha.toLowerCase())) {
+          confidence = 0.85;
+          method = 'explicit_reference';
+        }
+        return { sha, branch: branchName, message: subject || '', author: author || '', date, url: `https://github.com/${EVE_OS_REPO}/commit/${sha}`, tags: [], confidence, method };
+      });
+    } catch (_) {
+      return [];
+    }
+  });
+
+  const results = await runWithConcurrency(tasks, concurrency);
+  const allCandidates = results.flat();
+
+  // Deduplicate by SHA
+  const deduped = removeDuplicateBackports(allCandidates);
+
+  // Enrich with tags (fast local git)
+  const tagTasks = deduped.map(async candidate => {
+    try {
+      const stdout = execSync(`git tag --contains ${candidate.sha}`, { cwd: LOCAL_REPO_PATH, encoding: 'utf8', timeout: 10000 });
+      const tagNames = stdout.split('\n').map(t => t.trim()).filter(Boolean);
+      candidate.tags = tagNames.map(name => ({ name, isLTS: /lts$/i.test(name), semver: parseSemVer(name) }));
+    } catch (_) {
+      candidate.tags = [];
+    }
+    return candidate;
+  });
+
+  const enriched = await Promise.all(tagTasks);
+  enriched.sort((a, b) => new Date(b.date) - new Date(a.date));
+  return enriched;
+}
+
+// --- PR-based backport discovery (fast, precise) ---
+async function findBackportsViaPRs(originalCommitSha) {
+  const backports = [];
+
+  // 1) Find PRs associated with the original commit
+  const associatedPRs = await getAssociatedPRNumbersForCommit(originalCommitSha);
+  const originalPRNumbers = new Set(associatedPRs);
+
+  // If we didn't find any PR, still allow cherry-pick based matches
+  const stableBranches = await getStableBranches();
+  const limitedBranches = stableBranches.slice(0, 10); // cap for speed
+
+  // 2) For each stable branch, list merged PRs and inspect
+  for (const branch of limitedBranches) {
+    try {
+      const prs = await listMergedPRsForBranch(branch.name, 1); // one page for speed
+      for (const pr of prs) {
+        const prNumber = pr.number;
+        // Inspect PR body for backport references
+        const prBodyNumbers = extractBackportPRNumbersRegex(pr.body || '');
+        const intersects = [...prBodyNumbers].some(n => originalPRNumbers.has(n));
+
+        // Fetch commits in this PR
+        const prCommitsResp = await makeGitHubRequest(`${GITHUB_API_BASE}/repos/${EVE_OS_REPO}/pulls/${prNumber}/commits`, { per_page: 100 });
+        const prCommits = prCommitsResp.data || [];
+
+        // Inspect commits for cherry-pick reference
+        const hasCherryPick = prCommits.some(c => {
+          const msg = c.commit?.message || '';
+          const picked = extractCherryPickHashRegex(msg);
+          if (!picked) return false;
+          const shortSha = originalCommitSha.substring(0, 8).toLowerCase();
+          return picked.toLowerCase().startsWith(shortSha) || shortSha.startsWith(picked.toLowerCase());
+        });
+
+        if (intersects || hasCherryPick) {
+          // Treat this PR as a backport container; add its commits as candidates
+          for (const prCommit of prCommits) {
+            if (!prCommit.sha || prCommit.sha === originalCommitSha) continue;
+            let tags = [];
+            try {
+              // Prefer local git for speed
+              if (fs.existsSync(path.join(LOCAL_REPO_PATH, '.git'))) {
+                const stdout = execSync(`git tag --contains ${prCommit.sha}`, { cwd: LOCAL_REPO_PATH, encoding: 'utf8', timeout: 8000 });
+                const tagNames = stdout.split('\n').map(t => t.trim()).filter(Boolean);
+                tags = tagNames.map(name => ({ name, isLTS: /lts$/i.test(name), semver: parseSemVer(name) }));
+              } else {
+                tags = await getTagsForBackportedCommit(prCommit.sha, branch.name);
+              }
+            } catch (_) { /* ignore */ }
+
+            backports.push({
+              sha: prCommit.sha,
+              branch: branch.name,
+              message: prCommit.commit?.message || '',
+              author: prCommit.commit?.author?.name || pr.user?.login || 'unknown',
+              date: prCommit.commit?.author?.date || pr.merged_at || pr.updated_at || new Date().toISOString(),
+              url: prCommit.html_url || `https://github.com/${EVE_OS_REPO}/commit/${prCommit.sha}`,
+              tags,
+              confidence: intersects && hasCherryPick ? 0.95 : intersects ? 0.9 : 0.9,
+              method: intersects && hasCherryPick ? 'pr_body_and_cherry_pick' : intersects ? 'pr_body_reference' : 'cherry_pick_reference'
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`⚠️ PR scan failed for ${branch.name}:`, e.message);
+      continue;
+    }
+  }
+
+  return backports;
+}
+
+function extractBackportPRNumbersRegex(body) {
+  const text = (body || '').toLowerCase();
+  const regex = /(back\s*port(ing)?|port|original)s?[^#]{0,30}((#\d{3,6}\b)|(https:\/\/github\.com\/[^\/]+\/[^\/]+\/pull\/\d{3,6}))/gi;
+  const numbers = new Set();
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    const fragment = match[0];
+    const refs = fragment.match(/(?:#|pull\/)\d{3,6}/g) || [];
+    for (const ref of refs) {
+      const num = parseInt(ref.replace(/[^0-9]/g, ''), 10);
+      if (!isNaN(num)) numbers.add(num);
+    }
+  }
+  return numbers;
+}
+
+function extractCherryPickHashRegex(msg) {
+  const m = (msg || '').match(/cherry[ -]?picked from commit ([0-9a-fA-F]{7,40})/i);
+  return m ? m[1] : null;
+}
+
+async function getAssociatedPRNumbersForCommit(sha) {
+  try {
+    const resp = await makeGitHubRequestCustom(
+      `${GITHUB_API_BASE}/repos/${EVE_OS_REPO}/commits/${sha}/pulls`,
+      {},
+      { 'Accept': 'application/vnd.github.groot-preview+json' }
+    );
+    const arr = resp.data || [];
+    return arr.map(p => p.number).filter(Boolean);
+  } catch (_) {
+    return [];
+  }
+}
+
+async function listMergedPRsForBranch(branchName, pages = 1) {
+  const all = [];
+  for (let page = 1; page <= pages; page++) {
+    const search = await makeGitHubRequest(`${GITHUB_API_BASE}/search/issues`, {
+      q: `repo:${EVE_OS_REPO} is:pr is:merged base:${branchName}`,
+      sort: 'updated',
+      order: 'desc',
+      per_page: 50,
+      page
+    });
+    const items = search.data.items || [];
+    // Normalize: fetch minimal PR info for author if needed
+    all.push(...items.map(i => ({ number: i.number, title: i.title, body: i.body || '', user: i.user || {}, merged_at: i.closed_at || null, updated_at: i.updated_at || null })));
+    if (items.length < 50) break;
+  }
+  return all;
+}
+
+// --- PR commit title matching using local git (high precision) ---
+async function findBackportsViaPRTitles(originalCommitSha) {
+  if (!fs.existsSync(path.join(LOCAL_REPO_PATH, '.git'))) {
+    throw new Error('Local git repo not available');
+  }
+
+  // Get associated PRs
+  const prNumbers = await getAssociatedPRNumbersForCommit(originalCommitSha);
+  if (!prNumbers || prNumbers.length === 0) {
+    return [];
+  }
+
+  // Collect unique commit titles from those PRs
+  const titlesSet = new Set();
+  for (const prNum of prNumbers) {
+    try {
+      const resp = await makeGitHubRequest(`${GITHUB_API_BASE}/repos/${EVE_OS_REPO}/pulls/${prNum}/commits`, { per_page: 100 });
+      const commits = resp.data || [];
+      for (const c of commits) {
+        const firstLine = (c.commit?.message || '').split('\n')[0].trim();
+        if (!firstLine) continue;
+        const cleaned = firstLine.replace(/^(fix|feat|chore|docs):\s*/i, '').trim();
+        // Skip merge commits
+        if (/^merge\s/i.test(cleaned)) continue;
+        titlesSet.add(cleaned);
+      }
+    } catch (e) {
+      console.warn(`⚠️ Failed to fetch commits for PR #${prNum}:`, e.message);
+    }
+  }
+
+  const titles = [...titlesSet].slice(0, 30); // safety cap
+  if (titles.length === 0) return [];
+
+  // Ensure remotes are fresh
+  try { execSync('git fetch --all --tags --quiet', { cwd: LOCAL_REPO_PATH }); } catch (_) {}
+
+  const branches = await getLocalStableBranches();
+  if (branches.length === 0) return [];
+
+  // Build grep arguments for exact match (fixed strings)
+  const grepArgs = titles.map(t => `--grep=\"${t.replace(/\"/g, '\\"')}\"`).join(' ');
+  const maxPerBranch = 8000;
+  const concurrency = Math.min(6, Math.max(2, os.cpus()?.length || 4));
+
+  const tasks = branches.map(branchName => async () => {
+    const ref = `origin/${branchName}`;
+    // Use -F for fixed strings and -i for case-insensitive; OR across multiple --grep
+    const cmd = `git log ${ref} --no-merges -F -i --date=iso --pretty=format:%H%x01%an%x01%ad%x01%s -n ${maxPerBranch} ${grepArgs}`;
+    try {
+      const { stdout } = await execAsync(cmd, { cwd: LOCAL_REPO_PATH, maxBuffer: 1024 * 1024 * 64 });
+      if (!stdout) return [];
+      const lines = stdout.split('\n').filter(Boolean);
+      const matches = [];
+      for (const line of lines) {
+        const [sha, author, date, subject] = line.split('\u0001');
+        const subjectClean = (subject || '').split('\n')[0].trim().replace(/^(fix|feat|chore|docs):\s*/i, '').trim();
+        // Confirm exact title match ignoring trivial prefixes
+        const isExact = titlesSet.has(subjectClean);
+        if (!isExact) continue;
+        matches.push({ sha, branch: branchName, message: subject || '', author: author || '', date, url: `https://github.com/${EVE_OS_REPO}/commit/${sha}`, tags: [], confidence: 0.92, method: 'pr_title_match' });
+      }
+      return matches;
+    } catch (_) {
+      return [];
+    }
+  });
+
+  const results = await runWithConcurrency(tasks, concurrency);
+  const all = results.flat();
+
+  // Enrich with tags via local git
+  await Promise.all(all.map(async item => {
+    try {
+      const stdout = execSync(`git tag --contains ${item.sha}`, { cwd: LOCAL_REPO_PATH, encoding: 'utf8', timeout: 8000 });
+      const tagNames = stdout.split('\n').map(t => t.trim()).filter(Boolean);
+      item.tags = tagNames.map(name => ({ name, isLTS: /lts$/i.test(name), semver: parseSemVer(name) }));
+    } catch (_) {
+      item.tags = [];
+    }
+  }));
+
+  return all;
+}
+
+// Helper: get stable branches using local git (no API)
+async function getLocalStableBranches() {
+  try {
+    const { stdout } = await execAsync("git for-each-ref --format='%(refname:short)' refs/remotes/origin", { cwd: LOCAL_REPO_PATH });
+    const remoteBranches = stdout.split('\n').map(l => l.trim()).filter(Boolean);
+    const names = remoteBranches
+      .map(ref => ref.startsWith('origin/') ? ref.substring('origin/'.length) : ref)
+      .filter(name => name && (name.toLowerCase().includes('-stable') || name.toLowerCase().includes('lts')));
+    // Prefer semver-like branches first
+    names.sort((a, b) => {
+      const av = parseSemVer(a) || { major: -1, minor: -1, patch: -1 };
+      const bv = parseSemVer(b) || { major: -1, minor: -1, patch: -1 };
+      return compareSemVer(av, bv);
+    });
+    return names;
+  } catch (err) {
+    console.warn('⚠️ Failed to list local branches, aborting local fast path');
+    throw err;
+  }
+}
+
+// Helper: run async tasks with limited concurrency
+async function runWithConcurrency(taskFactories, limit) {
+  const results = new Array(taskFactories.length);
+  let index = 0;
+  let active = 0;
+  return await new Promise(resolve => {
+    const next = () => {
+      if (index >= taskFactories.length && active === 0) {
+        return resolve(results);
+      }
+      while (active < limit && index < taskFactories.length) {
+        const current = index++;
+        active++;
+        taskFactories[current]().then(res => {
+          results[current] = res;
+        }).catch(() => {
+          results[current] = [];
+        }).finally(() => {
+          active--;
+          next();
+        });
+      }
+    };
+    next();
+  });
 }
 
 // Find PR associated with a commit
@@ -929,6 +1321,47 @@ async function getCommitDetails(sha) {
 // Search for commits by message or get commit by SHA
 async function searchCommits(query, type = 'message', page = 1, perPage = 30) {
   try {
+    // If query is a GitHub URL, resolve it to commits first (PR or commit URL)
+    const ghUrlMatch = (query || '').match(/^https?:\/\/github\.com\/([^\/]+)\/([^\/]+)\/(pull\/(\d+)|commit\/([0-9a-fA-F]{7,40}))/i);
+    if (ghUrlMatch) {
+      const owner = ghUrlMatch[1];
+      const repo = ghUrlMatch[2];
+      const prNum = ghUrlMatch[4] ? parseInt(ghUrlMatch[4], 10) : null;
+      const commitShaFromUrl = ghUrlMatch[5] || null;
+      const repoFull = `${owner}/${repo}`;
+
+      if (prNum) {
+        // Fetch commits from the PR and return them as results
+        const commitsResp = await makeGitHubRequest(`${GITHUB_API_BASE}/repos/${repoFull}/pulls/${prNum}/commits`, { per_page: 100 });
+        const prCommits = commitsResp.data || [];
+        const formatted = prCommits.map(c => ({
+          sha: c.sha,
+          message: c.commit?.message || '',
+          author: c.commit?.author?.name || c.author?.login || 'unknown',
+          date: c.commit?.author?.date || null,
+          url: c.html_url || `https://github.com/${repoFull}/commit/${c.sha}`,
+          repository: repoFull
+        }));
+        return {
+          items: formatted,
+          total_count: formatted.length,
+          incomplete_results: false,
+          has_more: false
+        };
+      }
+
+      if (commitShaFromUrl) {
+        // Fetch a single commit
+        const response = await makeGitHubRequest(`${GITHUB_API_BASE}/repos/${repoFull}/commits/${commitShaFromUrl}`);
+        return {
+          items: [response.data],
+          total_count: 1,
+          incomplete_results: false,
+          has_more: false
+        };
+      }
+    }
+
     // If it looks like a SHA, treat it as a commit ID
     if (query.match(/^[a-f0-9]{7,40}$/i)) {
       console.log(`🔍 Searching by commit SHA: ${query}`);
@@ -1056,11 +1489,11 @@ app.get('/api/search/commits', async (req, res) => {
     // Format the response
     const formattedCommits = searchResult.items.map(commit => ({
       sha: commit.sha,
-      message: commit.commit.message,
-      author: commit.commit.author.name,
-      date: commit.commit.author.date,
-      url: commit.html_url,
-      repository: EVE_OS_REPO
+      message: commit.commit?.message || commit.message || '',
+      author: commit.commit?.author?.name || commit.author || commit.author_name || 'unknown',
+      date: commit.commit?.author?.date || commit.date || null,
+      url: commit.html_url || commit.url || (commit.sha ? `https://github.com/${EVE_OS_REPO}/commit/${commit.sha}` : undefined),
+      repository: commit.repository || EVE_OS_REPO
     }));
 
     res.json({

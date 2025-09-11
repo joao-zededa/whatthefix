@@ -581,49 +581,30 @@ async function analyzeBackports() {
     `;
     
     try {
-        console.log('Analyzing backports for commit:', currentCommit.sha);
-        const startTime = Date.now();
-        
-        const response = await fetch(`/api/commits/${currentCommit.sha}/backports`);
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 30000);
+        const response = await fetch(`/api/commits/${currentCommit.sha}/backports`, { signal: controller.signal });
+        clearTimeout(timeout);
         const data = await response.json();
-        
         if (!response.ok) {
             throw new Error(data.error || 'Failed to analyze backports');
         }
-        
-        const endTime = Date.now();
-        const duration = Math.round((endTime - startTime) / 1000);
-        
-        console.log(`Found ${data.summary.totalBackports} backports in ${duration} seconds`);
-        
-        // Store the data globally
-        currentBackportData = data;
-        
-        // Display results
         displayBackportResults(data);
-        
-        // Update button to show success state
         backportButton.innerHTML = '<i class="fas fa-check"></i> Analysis Complete';
         backportButton.disabled = false;
-        
     } catch (error) {
-        console.error('Failed to analyze backports:', error);
-        
-        // Show error state
         backportResults.innerHTML = `
             <h4><i class="fas fa-code-branch"></i> Backport Analysis</h4>
             <div class="no-backports-message">
                 <i class="fas fa-exclamation-triangle"></i>
                 <h3>Analysis Failed</h3>
-                <p>Failed to analyze backports: ${error.message}</p>
+                <p>Failed to analyze backports: ${error.name === 'AbortError' ? 'Request timed out.' : error.message}</p>
                 <button onclick="analyzeBackports()" class="analyze-backports-button">
                     <i class="fas fa-redo"></i>
                     Retry Analysis
                 </button>
             </div>
         `;
-        
-        // Reset button
         backportButton.innerHTML = '<i class="fas fa-project-diagram"></i> Find Backported Commits';
         backportButton.disabled = false;
     }
