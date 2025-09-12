@@ -42,6 +42,145 @@ body {
     color: white;
 }
 
+/* Position auth controls in top-right of header container */
+.header-content {
+    position: relative;
+}
+
+.auth-controls {
+    position: absolute;
+    top: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+/* Login selection page */
+.login-page {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+}
+
+.login-card {
+    width: 100%;
+    max-width: 720px;
+    background: #0D3A58;
+    border: 1px solid #193549;
+    border-radius: 16px;
+    padding: 32px;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+}
+
+.login-title {
+    color: #9EFFFF;
+    font-size: 1.8rem;
+    margin-bottom: 8px;
+}
+
+.login-subtitle {
+    color: #2AFFDF;
+    opacity: 0.9;
+    margin-bottom: 24px;
+}
+
+.providers {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+}
+
+@media (min-width: 640px) {
+    .providers {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+.provider-card {
+    width: 100%;
+    background: #193549;
+    border: 1px solid #0D3A58;
+    border-radius: 12px;
+    padding: 18px;
+    display: grid;
+    grid-template-columns: 48px 1fr 24px;
+    align-items: center;
+    gap: 14px;
+    cursor: pointer;
+    transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+    color: #9EFFFF;
+    text-align: left;
+}
+
+.provider-card:hover {
+    transform: translateY(-2px);
+    border-color: #2AFFDF;
+    box-shadow: 0 8px 24px rgba(42,255,223,.25);
+}
+
+.provider-card:focus {
+    outline: 3px solid rgba(42,255,223,.5);
+    outline-offset: 2px;
+}
+
+.provider-card .provider-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: 10px;
+    background: #0D3A58;
+}
+
+.provider-card.okta .provider-icon i {
+    color: #2AFFDF;
+    font-size: 22px;
+}
+
+.provider-card.google .provider-icon i {
+    color: #fff;
+    background: linear-gradient(135deg,#4285F4,#34A853);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-size: 22px;
+}
+
+.provider-content .provider-name {
+    font-weight: 700;
+    color: #9EFFFF;
+    margin-bottom: 4px;
+}
+
+.provider-content .provider-desc {
+    color: #9EFFFF;
+    opacity: .7;
+    font-size: .9rem;
+}
+
+.provider-cta {
+    color: #2AFFDF;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.login-help {
+    margin-top: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.login-back {
+    color: #9EFFFF;
+    text-decoration: none;
+}
+.login-back:hover { text-decoration: underline; }
+
 .header-content h1 {
     font-size: 2.5rem;
     font-weight: 700;

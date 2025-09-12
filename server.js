@@ -8,14 +8,407 @@ const { execSync, exec } = require('child_process');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
 const os = require('os');
+const helmet = require('helmet');
+const cookieParser = require('cookie-parser');
+const session = require('express-session');
+const { Issuer, generators } = require('openid-client');
+const { createRemoteJWKSet, jwtVerify, decodeJwt } = require('jose');
+const { v4: uuidv4 } = require('uuid');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
-app.use(cors());
+// Trust proxy when behind load balancers (required for secure cookies)
+if (process.env.TRUST_PROXY === 'true') {
+  app.set('trust proxy', 1);
+}
+
+// Security headers
+app.use(helmet({
+  contentSecurityPolicy: false
+}));
+
+// CORS configuration
+const allowedOrigin = process.env.CORS_ORIGIN || undefined;
+app.use(cors({
+  origin: allowedOrigin,
+  credentials: true
+}));
+
 app.use(express.json());
+app.use(cookieParser());
+
+// Session configuration
+const SESSION_SECRET = process.env.SESSION_SECRET || 'change-me-in-production';
+const SECURE_COOKIES = (process.env.SECURE_COOKIES || 'false').toLowerCase() === 'true';
+app.use(session({
+  name: 'sid',
+  secret: SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    secure: SECURE_COOKIES,
+    sameSite: SECURE_COOKIES ? 'none' : 'lax',
+    maxAge: 1000 * 60 * 60 * 8
+  }
+}));
+
 app.use(express.static('public'));
+
+// -------- OIDC configuration (Okta + Google) --------
+const OKTA_ISSUER = process.env.OKTA_ISSUER; // e.g., https://dev-xxxxx.okta.com/oauth2/default
+const OKTA_CLIENT_ID = process.env.OKTA_CLIENT_ID;
+const OKTA_CLIENT_SECRET = process.env.OKTA_CLIENT_SECRET; // required for server-side code flow
+const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`; // External URL
+const OIDC_REDIRECT_PATH = process.env.OIDC_REDIRECT_PATH || '/auth/callback';
+const OIDC_REDIRECT_URI = process.env.OKTA_REDIRECT_URI || `${BASE_URL}${OIDC_REDIRECT_PATH}`;
+const POST_LOGOUT_REDIRECT_URI = process.env.OKTA_POST_LOGOUT_REDIRECT_URI || `${BASE_URL}/`;
+const OIDC_SCOPES = (process.env.OKTA_SCOPES || 'openid profile email groups offline_access').split(/[\s,]+/).filter(Boolean).join(' ');
+
+let oidcClient = null;
+let jwks = null;
+
+// Google config
+const GOOGLE_ISSUER = process.env.GOOGLE_ISSUER || 'https://accounts.google.com';
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const GOOGLE_REDIRECT_PATH = process.env.GOOGLE_REDIRECT_PATH || '/auth/google/callback';
+const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || `${BASE_URL}${GOOGLE_REDIRECT_PATH}`;
+const GOOGLE_POST_LOGOUT_REDIRECT_URI = process.env.GOOGLE_POST_LOGOUT_REDIRECT_URI || `${BASE_URL}/`;
+const GOOGLE_SCOPES = (process.env.GOOGLE_SCOPES || 'openid profile email offline_access').split(/[\s,]+/).filter(Boolean).join(' ');
+
+let googleClient = null;
+const issuerJwks = new Map();
+
+async function ensureOidcClient() {
+  if (oidcClient) return oidcClient;
+  if (!OKTA_ISSUER || !OKTA_CLIENT_ID) {
+    throw new Error('Okta OIDC not configured. Set OKTA_ISSUER and OKTA_CLIENT_ID.');
+  }
+  const oktaIssuer = await Issuer.discover(OKTA_ISSUER);
+  oidcClient = new oktaIssuer.Client({
+    client_id: OKTA_CLIENT_ID,
+    client_secret: OKTA_CLIENT_SECRET,
+    redirect_uris: [OIDC_REDIRECT_URI],
+    response_types: ['code']
+  });
+  jwks = createRemoteJWKSet(new URL(oktaIssuer.metadata.jwks_uri));
+  issuerJwks.set(OKTA_ISSUER, jwks);
+  return oidcClient;
+}
+
+async function ensureGoogleClient() {
+  if (googleClient) return googleClient;
+  const issuerUrl = GOOGLE_ISSUER;
+  if (!GOOGLE_CLIENT_ID) {
+    throw new Error('Google OIDC not configured. Set GOOGLE_CLIENT_ID.');
+  }
+  const gIssuer = await Issuer.discover(issuerUrl);
+  googleClient = new gIssuer.Client({
+     client_id: GOOGLE_CLIENT_ID,
+     client_secret: GOOGLE_CLIENT_SECRET,
+     redirect_uris: [GOOGLE_REDIRECT_URI],
+     response_types: ['code']
+  });
+  const gJwks = createRemoteJWKSet(new URL(gIssuer.metadata.jwks_uri));
+  issuerJwks.set(gIssuer.issuer, gJwks);
+  return googleClient;
+}
+
+async function getJwksForIssuer(iss) {
+  if (issuerJwks.has(iss)) return issuerJwks.get(iss);
+  const discovered = await Issuer.discover(iss);
+  const r = createRemoteJWKSet(new URL(discovered.metadata.jwks_uri));
+  issuerJwks.set(iss, r);
+  return r;
+}
+
+function mapGroupsToRoles(groups) {
+  const groupList = Array.isArray(groups) ? groups : [];
+  const mappingStr = process.env.OKTA_GROUP_ROLE_MAP || '';
+  const roles = new Set();
+  if (mappingStr) {
+    // Format: appRole:OktaGroupA|OktaGroupB,anotherRole:GroupC
+    const pairs = mappingStr.split(',').map(s => s.trim()).filter(Boolean);
+    for (const pair of pairs) {
+      const [role, groupsStr] = pair.split(':');
+      if (!role || !groupsStr) continue;
+      const mappedGroups = groupsStr.split('|').map(s => s.trim()).filter(Boolean);
+      if (groupList.some(g => mappedGroups.includes(g))) {
+        roles.add(role.trim());
+      }
+    }
+  }
+  // Optional default mapping: if a group name matches role name
+  for (const g of groupList) {
+    if (g && typeof g === 'string') {
+      const normalized = g.toLowerCase();
+      if (normalized.includes('admin')) roles.add('admin');
+    }
+  }
+  return Array.from(roles);
+}
+
+function mapGoogleToRoles(email, hostedDomain) {
+  const roles = new Set();
+  const emailMap = process.env.GOOGLE_EMAIL_ROLE_MAP || '';
+  const hdMap = process.env.GOOGLE_HD_ROLE_MAP || '';
+  if (email && emailMap) {
+    const pairs = emailMap.split(',').map(s => s.trim()).filter(Boolean);
+    for (const pair of pairs) {
+      const [role, emailsStr] = pair.split(':');
+      if (!role || !emailsStr) continue;
+      const emails = emailsStr.split('|').map(s => s.trim().toLowerCase());
+      if (emails.includes(email.toLowerCase())) roles.add(role.trim());
+    }
+  }
+  if (hostedDomain && hdMap) {
+    const pairs = hdMap.split(',').map(s => s.trim()).filter(Boolean);
+    for (const pair of pairs) {
+      const [role, domainsStr] = pair.split(':');
+      if (!role || !domainsStr) continue;
+      const domains = domainsStr.split('|').map(s => s.trim().toLowerCase());
+      if (domains.includes(String(hostedDomain).toLowerCase())) roles.add(role.trim());
+    }
+  }
+  return Array.from(roles);
+}
+
+function ensureAuthenticated(req, res, next) {
+  if (req.session && req.session.user) return next();
+  return res.status(401).json({ error: 'Unauthorized' });
+}
+
+function requireRole(required) {
+  const requiredRoles = Array.isArray(required) ? required : [required];
+  return (req, res, next) => {
+    if (!req.session || !req.session.user) return res.status(401).json({ error: 'Unauthorized' });
+    const userRoles = req.session.user.roles || [];
+    const ok = requiredRoles.some(r => userRoles.includes(r));
+    if (!ok) return res.status(403).json({ error: 'Forbidden' });
+    return next();
+  };
+}
+
+// -------- Auth routes --------
+app.get('/auth/login', async (req, res) => {
+  try {
+    const client = await ensureOidcClient();
+    const state = generators.state();
+    const nonce = generators.nonce();
+    const codeVerifier = generators.codeVerifier();
+    const codeChallenge = generators.codeChallenge(codeVerifier);
+    req.session.oidc = { state, nonce, codeVerifier };
+    const authUrl = client.authorizationUrl({
+      scope: OIDC_SCOPES,
+      state,
+      nonce,
+      code_challenge: codeChallenge,
+      code_challenge_method: 'S256',
+      redirect_uri: OIDC_REDIRECT_URI
+    });
+    return res.redirect(authUrl);
+  } catch (e) {
+    return res.status(500).json({ error: 'Failed to initiate login', message: e.message });
+  }
+});
+
+app.get(OIDC_REDIRECT_PATH, async (req, res) => {
+  try {
+    const client = await ensureOidcClient();
+    const params = client.callbackParams(req);
+    if (!req.session.oidc || params.state !== req.session.oidc.state) {
+      return res.status(400).send('Invalid state');
+    }
+    const tokenSet = await client.callback(OIDC_REDIRECT_URI, params, {
+      state: req.session.oidc.state,
+      nonce: req.session.oidc.nonce,
+      code_verifier: req.session.oidc.codeVerifier
+    });
+
+    // Validate basic token claims
+    const claims = tokenSet.claims();
+    const groups = claims.groups || [];
+    const roles = mapGroupsToRoles(groups);
+    req.session.user = {
+      id: claims.sub,
+      name: claims.name || claims.preferred_username || claims.email,
+      email: claims.email,
+      groups,
+      roles,
+      idToken: tokenSet.id_token // kept temporarily for logout; not sent to client
+    };
+    req.session.tokens = {
+      refresh_token: tokenSet.refresh_token || null,
+      expires_at: tokenSet.expires_at || null
+    };
+    delete req.session.oidc;
+    return res.redirect('/');
+  } catch (e) {
+    return res.status(500).send(`Login callback failed: ${e.message}`);
+  }
+});
+
+app.get('/auth/me', (req, res) => {
+  if (!req.session || !req.session.user) {
+    return res.status(200).json({ authenticated: false });
+  }
+  const { id, name, email, groups, roles, provider } = req.session.user;
+  return res.json({ authenticated: true, id, name, email, groups, roles, provider });
+});
+
+app.post('/auth/refresh', async (req, res) => {
+  try {
+    const client = await ensureOidcClient();
+    if (!req.session || !req.session.tokens || !req.session.tokens.refresh_token) {
+      return res.status(400).json({ error: 'No refresh token' });
+    }
+    const tokenSet = await client.refresh(req.session.tokens.refresh_token);
+    // Rotation: replace refresh token if provided
+    if (tokenSet.refresh_token) {
+      req.session.tokens.refresh_token = tokenSet.refresh_token;
+    }
+    req.session.tokens.expires_at = tokenSet.expires_at || null;
+    return res.json({ success: true, expires_at: req.session.tokens.expires_at });
+  } catch (e) {
+    return res.status(401).json({ error: 'Refresh failed', message: e.message });
+  }
+});
+
+app.get('/auth/logout', async (req, res) => {
+  try {
+    const provider = req.session?.user?.provider;
+    const idTokenHint = req.session?.user?.idToken;
+    if (provider === 'okta' && idTokenHint) {
+      const client = await ensureOidcClient();
+      const endUrl = client.endSessionUrl({ id_token_hint: idTokenHint, post_logout_redirect_uri: POST_LOGOUT_REDIRECT_URI, state: uuidv4() });
+      req.session.destroy(() => {});
+      return res.redirect(endUrl);
+    }
+    const redirectUrl = provider === 'google' ? GOOGLE_POST_LOGOUT_REDIRECT_URI : POST_LOGOUT_REDIRECT_URI;
+    req.session.destroy(() => {});
+    return res.redirect(redirectUrl);
+  } catch (e) {
+    return res.redirect(POST_LOGOUT_REDIRECT_URI);
+  }
+});
+
+// Validate a bearer access token (for SPA PKCE use)
+app.post('/auth/validate', async (req, res) => {
+  try {
+    const authz = req.headers['authorization'] || '';
+    const parts = authz.split(' ');
+    if (parts.length !== 2 || parts[0] !== 'Bearer') {
+      return res.status(400).json({ error: 'Missing bearer token' });
+    }
+    const token = parts[1];
+    // Pick JWKS based on token issuer
+    const unverified = decodeJwt(token);
+    const iss = unverified.iss;
+    if (!iss) throw new Error('Missing iss');
+    const keyset = await getJwksForIssuer(iss);
+    const audience = iss === OKTA_ISSUER
+      ? (process.env.OKTA_AUDIENCE || OKTA_CLIENT_ID)
+      : (process.env.GOOGLE_AUDIENCE || GOOGLE_CLIENT_ID);
+    const { payload } = await jwtVerify(token, keyset, {
+      issuer: iss,
+      audience
+    });
+    return res.json({ valid: true, payload });
+  } catch (e) {
+    return res.status(401).json({ valid: false, error: e.message });
+  }
+});
+
+// Example protected API
+app.get('/api/protected', ensureAuthenticated, requireRole(['admin', 'editor']), (req, res) => {
+  res.json({ message: 'Protected data', user: req.session.user });
+});
+
+// -------- Google Auth routes --------
+app.get('/auth/google/login', async (req, res) => {
+  try {
+    const client = await ensureGoogleClient();
+    const state = generators.state();
+    const nonce = generators.nonce();
+    const codeVerifier = generators.codeVerifier();
+    const codeChallenge = generators.codeChallenge(codeVerifier);
+    req.session.oidcGoogle = { state, nonce, codeVerifier };
+    const authUrl = client.authorizationUrl({
+      scope: GOOGLE_SCOPES,
+      state,
+      nonce,
+      code_challenge: codeChallenge,
+      code_challenge_method: 'S256',
+      redirect_uri: GOOGLE_REDIRECT_URI,
+      access_type: 'offline',
+      prompt: 'consent'
+    });
+    return res.redirect(authUrl);
+  } catch (e) {
+    return res.status(500).json({ error: 'Failed to initiate Google login', message: e.message });
+  }
+});
+
+app.get(GOOGLE_REDIRECT_PATH, async (req, res) => {
+  try {
+    const client = await ensureGoogleClient();
+    const params = client.callbackParams(req);
+    if (!req.session.oidcGoogle || params.state !== req.session.oidcGoogle.state) {
+      return res.status(400).send('Invalid state');
+    }
+    const tokenSet = await client.callback(GOOGLE_REDIRECT_URI, params, {
+      state: req.session.oidcGoogle.state,
+      nonce: req.session.oidcGoogle.nonce,
+      code_verifier: req.session.oidcGoogle.codeVerifier
+    });
+    const claims = tokenSet.claims();
+    const roles = mapGoogleToRoles(claims.email, claims.hd);
+    req.session.user = {
+      id: claims.sub,
+      name: claims.name || claims.email,
+      email: claims.email,
+      groups: [],
+      roles,
+      idToken: tokenSet.id_token,
+      provider: 'google'
+    };
+    req.session.tokens = {
+      refresh_token: tokenSet.refresh_token || null,
+      expires_at: tokenSet.expires_at || null
+    };
+    delete req.session.oidcGoogle;
+    return res.redirect('/');
+  } catch (e) {
+    return res.status(500).send(`Google login callback failed: ${e.message}`);
+  }
+});
+
+// Test-only helper to simulate login
+if (process.env.NODE_ENV === 'test') {
+  app.post('/test/login', (req, res) => {
+    const body = req.body || {};
+    const roles = Array.isArray(body.roles) ? body.roles : [];
+    const groups = Array.isArray(body.groups) ? body.groups : [];
+    req.session.user = {
+      id: 'test-user',
+      name: body.name || 'Test User',
+      email: body.email || 'test@example.com',
+      groups,
+      roles
+    };
+    res.json({ ok: true });
+  });
+}
+
+// Export for testing
+module.exports = {
+  app,
+  mapGroupsToRoles,
+  ensureAuthenticated,
+  requireRole
+};
 
 // EVE-OS GitHub repository information
 const EVE_OS_REPO = 'lf-edge/eve';
@@ -1800,6 +2193,11 @@ app.post('/api/cache/clear', (req, res) => {
 // Serve the main application
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Serve provider selection login page
+app.get('/login', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
 // Add rate limit info endpoint

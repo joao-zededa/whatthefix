@@ -270,6 +270,7 @@ whatthefix/
 1. **GitHub Token**: Generate a new Classic Token at https://github.com/settings/tokens with `public_repo` scope
 2. **Local Development**: Use `npm run dev` for auto-reload
 3. **Production**: Use `npm start` for stable deployment
+4. **Okta SSO**: See `README-OKTA.md` for OIDC setup, security, and diagrams. Copy `.env.example` to `.env` and configure Okta values.
 
 ### Debugging
 - **Server Logs**: Check `server_output.log` 

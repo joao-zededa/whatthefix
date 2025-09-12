@@ -29,6 +29,7 @@ const exampleTags = document.querySelectorAll('.example-tag');
 document.addEventListener('DOMContentLoaded', function() {
     initializeEventListeners();
     checkCacheStatus();
+    fetchProfile();
 });
 
 function initializeEventListeners() {
@@ -137,6 +138,18 @@ function initializeEventListeners() {
             hideModal();
         }
     });
+
+    // Auth buttons
+    const loginBtn = document.getElementById('loginBtn');
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (loginBtn) loginBtn.addEventListener('click', () => window.location.href = '/login');
+    if (logoutBtn) logoutBtn.addEventListener('click', async () => {
+        try {
+            await fetch('/auth/logout', { credentials: 'include' });
+        } finally {
+            window.location.reload();
+        }
+    });
 }
 
 // Check cache status on startup
@@ -152,6 +165,33 @@ async function checkCacheStatus() {
         }
     } catch (error) {
         console.warn('Could not check cache status:', error);
+    }
+}
+
+// Fetch authenticated profile and toggle UI
+async function fetchProfile() {
+    try {
+        const res = await fetch('/auth/me', { credentials: 'include' });
+        const data = await res.json();
+        const loginBtn = document.getElementById('loginBtn');
+        const logoutBtn = document.getElementById('logoutBtn');
+        const profileInfo = document.getElementById('profileInfo');
+        if (data && data.authenticated) {
+            if (profileInfo) {
+                const name = data.name || data.email || 'User';
+                const roles = (data.roles || []).join(', ');
+                profileInfo.textContent = `${name}${roles ? ' · ' + roles : ''}`;
+                profileInfo.style.display = 'block';
+            }
+            if (loginBtn) loginBtn.style.display = 'none';
+            if (logoutBtn) logoutBtn.style.display = 'inline-flex';
+        } else {
+            if (profileInfo) profileInfo.style.display = 'none';
+            if (loginBtn) loginBtn.style.display = 'inline-flex';
+            if (logoutBtn) logoutBtn.style.display = 'none';
+        }
+    } catch (_) {
+        // Ignore
     }
 }
 
