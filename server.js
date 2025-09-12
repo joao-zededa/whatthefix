@@ -733,7 +733,13 @@ async function findBackportsViaPRs(originalCommitSha) {
               const belongs = await commitBelongsToBranch(prCommit.sha, branch.name);
               if (!belongs) continue;
             } catch (_) { continue; }
-            const tags = await getTagsLocalOrApi(prCommit.sha, branch.name);
+            let tags = await getTagsLocalOrApi(prCommit.sha, branch.name);
+            if (!tags || tags.length === 0) {
+              try {
+                const fallback = getTagsContainingCommitGit(prCommit.sha);
+                tags = (fallback && fallback.tags) ? fallback.tags.map(t => ({ name: t.name, isLTS: /lts$/i.test(t.name), semver: parseSemVer(t.name) })) : [];
+              } catch (_) { tags = []; }
+            }
 
             backports.push({
               sha: prCommit.sha,
