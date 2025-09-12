@@ -148,6 +148,30 @@ function parseSemVer(name) {
   };
 }
 
+// Ensure a specific commit object exists in the local repo; fetch if missing
+function ensureCommitFetchedLocally(commitSha) {
+  if (!fs.existsSync(path.join(LOCAL_REPO_PATH, '.git'))) return;
+  try {
+    execSync(`git cat-file -e ${commitSha}^{commit}`, { cwd: LOCAL_REPO_PATH, stdio: 'ignore' });
+  } catch (_) {
+    try {
+      execSync(`git fetch --quiet origin ${commitSha}`, { cwd: LOCAL_REPO_PATH });
+    } catch (err) {
+      // As a fallback, fetch all and tags
+      try { execSync('git fetch --all --tags --quiet', { cwd: LOCAL_REPO_PATH }); } catch (_) {}
+    }
+  }
+}
+
+function ensureBranchFetched(branchName) {
+  if (!branchName || !fs.existsSync(path.join(LOCAL_REPO_PATH, '.git'))) return;
+  try {
+    execSync(`git fetch --quiet origin ${branchName}:${branchName}`, { cwd: LOCAL_REPO_PATH });
+  } catch (_) {
+    try { execSync(`git fetch --quiet origin ${branchName}`, { cwd: LOCAL_REPO_PATH }); } catch (_) {}
+  }
+}
+
 function compareSemVer(a, b) {
   if (a.major !== b.major) return b.major - a.major;
   if (a.minor !== b.minor) return b.minor - a.minor;
@@ -173,6 +197,10 @@ function getTagsContainingCommitGit(sha) {
     if (!fs.existsSync(path.join(LOCAL_REPO_PATH, '.git'))) {
       throw new Error('Local repo missing');
     }
+    // Ensure tags are fresh
+    try {
+      execSync('git fetch --tags --quiet', { cwd: LOCAL_REPO_PATH });
+    } catch (_) {}
     const stdout = execSync(`git tag --contains ${sha}`, { cwd: LOCAL_REPO_PATH, encoding: 'utf8' });
     const tagNames = stdout.split('\n').map(t => t.trim()).filter(Boolean);
     const tags = tagNames.map(name => ({
@@ -180,6 +208,13 @@ function getTagsContainingCommitGit(sha) {
       isLTS: /lts$/i.test(name),
       semver: parseSemVer(name)
     }));
+    // Try to determine the first tag that picked it up
+    let firstTag = null;
+    try {
+      const desc = execSync(`git describe --contains --tags ${sha}`, { cwd: LOCAL_REPO_PATH, encoding: 'utf8' }).trim();
+      // Normalize possible suffixes like '^0' or '~<n>'
+      firstTag = desc.split('^')[0].split('~')[0];
+    } catch (_) {}
     
     // Sort tags by semantic version (newest first)
     tags.sort((a, b) => {
@@ -195,7 +230,7 @@ function getTagsContainingCommitGit(sha) {
     });
     
     const summary = buildTagSummary(tags);
-    const payload = { tags, count: tags.length, summary };
+    const payload = { tags, count: tags.length, summary, firstTag };
     cache.commitTags.set(cacheKey, payload);
     return payload;
   } catch (err) {
@@ -211,7 +246,7 @@ function getTagsContainingCommitGit(sha) {
         if (!a.semver && b.semver) return 1;
         return b.name.localeCompare(a.name, undefined, { numeric: true });
       });
-      return { tags, count: tags.length, summary: buildTagSummary(tags) };
+      return { tags, count: tags.length, summary: buildTagSummary(tags), firstTag: null };
     });
   }
 }
@@ -297,12 +332,12 @@ async function findTagsForCommit(sha) {
             
             const result = compareResponse.data;
             
-            // More lenient logic: accept more cases
+            // Tag contains commit if tag (head) is ahead of or identical to base commit
             const containsCommit = (
-              result.status === 'behind' ||     
-              result.status === 'identical' ||  
+              result.status === 'ahead' ||
+              result.status === 'identical' ||
               (result.status === 'diverged' && result.behind_by === 0) ||
-              (result.status === 'diverged' && result.behind_by <= 5)  // Allow small divergence
+              (result.status === 'diverged' && result.ahead_by > 0 && result.behind_by <= 5)
             );
             
             if (containsCommit) {
@@ -408,8 +443,8 @@ async function getAllTags() {
       
       allTags.push(...tags);
       
-      // Limit to prevent excessive API calls
-      if (tags.length < perPage || page >= 5) break; // Max 5 pages = 500 tags
+      // Continue until exhausted
+      if (tags.length < perPage) break;
       page++;
     }
     
@@ -586,6 +621,8 @@ async function findBackportedCommitsLocal(originalCommitSha, originalCommitMessa
   try {
     execSync('git fetch --all --tags --quiet', { cwd: LOCAL_REPO_PATH });
   } catch (_) {}
+  // Make sure the commit is present locally (PR commit might not be in default refs)
+  try { ensureCommitFetchedLocally(originalCommitSha); } catch (_) {}
   const branches = await getLocalStableBranches();
 
   if (branches.length === 0) {
@@ -690,17 +727,13 @@ async function findBackportsViaPRs(originalCommitSha) {
           // Treat this PR as a backport container; add its commits as candidates
           for (const prCommit of prCommits) {
             if (!prCommit.sha || prCommit.sha === originalCommitSha) continue;
-            let tags = [];
+            // Ensure the commit belongs to this stable branch before collecting tags
+            // to avoid asking tags for unrelated commits
             try {
-              // Prefer local git for speed
-              if (fs.existsSync(path.join(LOCAL_REPO_PATH, '.git'))) {
-                const stdout = execSync(`git tag --contains ${prCommit.sha}`, { cwd: LOCAL_REPO_PATH, encoding: 'utf8', timeout: 8000 });
-                const tagNames = stdout.split('\n').map(t => t.trim()).filter(Boolean);
-                tags = tagNames.map(name => ({ name, isLTS: /lts$/i.test(name), semver: parseSemVer(name) }));
-              } else {
-                tags = await getTagsForBackportedCommit(prCommit.sha, branch.name);
-              }
-            } catch (_) { /* ignore */ }
+              const belongs = await commitBelongsToBranch(prCommit.sha, branch.name);
+              if (!belongs) continue;
+            } catch (_) { continue; }
+            const tags = await getTagsLocalOrApi(prCommit.sha, branch.name);
 
             backports.push({
               sha: prCommit.sha,
@@ -725,6 +758,25 @@ async function findBackportsViaPRs(originalCommitSha) {
   return backports;
 }
 
+// Verify commit exists in the given branch
+async function commitBelongsToBranch(commitSha, branchName) {
+  if (fs.existsSync(path.join(LOCAL_REPO_PATH, '.git'))) {
+    try {
+      ensureBranchFetched(`origin/${branchName}`);
+      ensureCommitFetchedLocally(commitSha);
+      const out = execSync(`git branch -r --contains ${commitSha}`, { cwd: LOCAL_REPO_PATH, encoding: 'utf8', timeout: 8000 });
+      const lines = out.split('\n').map(l => l.trim()).filter(Boolean);
+      if (lines.some(l => l.endsWith(`origin/${branchName}`))) return true;
+    } catch (_) { /* fall through */ }
+  }
+  try {
+    const cmp = await makeGitHubRequest(`${GITHUB_API_BASE}/repos/${EVE_OS_REPO}/compare/${commitSha}...${branchName}`);
+    const r = cmp.data;
+    return r.status === 'ahead' || r.status === 'identical' || (r.status === 'diverged' && r.ahead_by > 0);
+  } catch (_) {
+    return false;
+  }
+}
 function extractBackportPRNumbersRegex(body) {
   const text = (body || '').toLowerCase();
   const regex = /(back\s*port(ing)?|port|original)s?[^#]{0,30}((#\d{3,6}\b)|(https:\/\/github\.com\/[^\/]+\/[^\/]+\/pull\/\d{3,6}))/gi;
@@ -776,6 +828,21 @@ async function listMergedPRsForBranch(branchName, pages = 1) {
     if (items.length < 50) break;
   }
   return all;
+}
+
+// Try local git tag resolution; on failure, fallback to API-based approach
+async function getTagsLocalOrApi(commitSha, branchName) {
+  if (fs.existsSync(path.join(LOCAL_REPO_PATH, '.git'))) {
+    try {
+      try { ensureCommitFetchedLocally(commitSha); } catch (_) {}
+      const stdout = execSync(`git tag --contains ${commitSha}`, { cwd: LOCAL_REPO_PATH, encoding: 'utf8', timeout: 15000 });
+      const tagNames = stdout.split('\n').map(t => t.trim()).filter(Boolean);
+      if (tagNames.length > 0) {
+        return tagNames.map(name => ({ name, isLTS: /lts$/i.test(name), semver: parseSemVer(name) }));
+      }
+    } catch (_) { /* fall through */ }
+  }
+  return await getTagsForBackportedCommit(commitSha, branchName);
 }
 
 // --- PR commit title matching using local git (high precision) ---
@@ -1017,7 +1084,7 @@ async function findExplicitBackports(originalCommitSha, originalPR, branchName) 
         // Check if this looks like a backport
         const isBackport = isLikelyBackport(commit, originalCommitSha, originalPR);
         
-        if (isBackport.isBackport) {
+        if (isBackport.isBackport && await commitBelongsToBranch(commit.sha, branchName)) {
           const tags = await getTagsForBackportedCommit(commit.sha, branchName);
           
           backports.push({
@@ -1066,7 +1133,7 @@ async function findCherryPickBackports(originalCommitSha, branchName) {
         const referencedSha = cherryPickMatch[1];
         
         // Check if this references our original commit (full or partial match)
-        if (originalCommitSha.startsWith(referencedSha) || referencedSha.startsWith(originalCommitSha.substring(0, 8))) {
+        if ((originalCommitSha.startsWith(referencedSha) || referencedSha.startsWith(originalCommitSha.substring(0, 8))) && await commitBelongsToBranch(commit.sha, branchName)) {
           const tags = await getTagsForBackportedCommit(commit.sha, branchName);
           
           backports.push({
@@ -1116,7 +1183,7 @@ async function findSimilarCommits(originalMessage, originalCommitSha, branchName
       const similarity = calculateStringSimilarity(firstLine, commitFirstLine);
       
       // Higher threshold for similarity-based matching since it's less reliable
-      if (similarity > 0.85) {
+      if (similarity > 0.85 && await commitBelongsToBranch(commit.sha, branchName)) {
         const tags = await getTagsForBackportedCommit(commit.sha, branchName);
         
         backports.push({
@@ -1191,12 +1258,27 @@ async function getTagsForBackportedCommit(commitSha, branchName) {
     // Use local git repo if available for faster lookup
     if (fs.existsSync(path.join(LOCAL_REPO_PATH, '.git'))) {
       try {
-        const stdout = execSync(`git tag --contains ${commitSha} --merged ${branchName}`, { 
+        try { ensureBranchFetched(`origin/${branchName}`); } catch (_) {}
+        // First try without restricting to a branch (most reliable)
+        let stdout = execSync(`git tag --contains ${commitSha}`, {
           cwd: LOCAL_REPO_PATH, 
           encoding: 'utf8',
           timeout: 10000 
         });
-        const tagNames = stdout.split('\n').map(t => t.trim()).filter(Boolean);
+        let tagNames = stdout.split('\n').map(t => t.trim()).filter(Boolean);
+
+        // If none found and we have a branch, try restricting to the remote branch
+        if (tagNames.length === 0 && branchName) {
+          try {
+            stdout = execSync(`git tag --contains ${commitSha} --merged origin/${branchName}`, {
+              cwd: LOCAL_REPO_PATH,
+              encoding: 'utf8',
+              timeout: 10000
+            });
+            tagNames = stdout.split('\n').map(t => t.trim()).filter(Boolean);
+          } catch (_) { /* ignore */ }
+        }
+
         return tagNames.map(name => ({
           name,
           isLTS: /lts$/i.test(name),
@@ -1207,14 +1289,11 @@ async function getTagsForBackportedCommit(commitSha, branchName) {
       }
     }
     
-    // Fallback to API-based tag lookup
+    // Fallback to API-based tag lookup across available tags
     const allTags = await getAllTags();
     const tagsWithCommit = [];
     
-    // Check a subset of tags to avoid too many API calls
-    const recentTags = allTags.slice(0, 50); // Check most recent 50 tags
-    
-    for (const tag of recentTags) {
+    for (const tag of allTags) {
       try {
         const compareResponse = await makeGitHubRequest(
           `${GITHUB_API_BASE}/repos/${EVE_OS_REPO}/compare/${commitSha}...${tag.commit.sha}`
@@ -1222,9 +1301,10 @@ async function getTagsForBackportedCommit(commitSha, branchName) {
         
         const result = compareResponse.data;
         const containsCommit = (
-          result.status === 'behind' ||
+          result.status === 'ahead' ||
           result.status === 'identical' ||
-          (result.status === 'diverged' && result.behind_by === 0)
+          (result.status === 'diverged' && result.behind_by === 0) ||
+          (result.status === 'diverged' && result.ahead_by > 0 && result.behind_by <= 5)
         );
         
         if (containsCommit) {
