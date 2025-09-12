@@ -61,7 +61,6 @@ function initializeEventListeners() {
         // Visual feedback for SHA vs message
         if (isCommitSHA(query)) {
             this.style.fontFamily = 'Monaco, monospace';
-            this.style.backgroundColor = '#f8f9fa';
             // Search immediately for SHA
             searchTimeout = setTimeout(() => performSearch(), 300);
         } else {
