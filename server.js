@@ -11,7 +11,12 @@ const os = require('os');
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
 const session = require('express-session');
-const { Issuer, generators } = require('openid-client');
+let _oidc = null;
+async function getOpenId() {
+  if (_oidc) return _oidc;
+  _oidc = await import('openid-client');
+  return _oidc;
+}
 const { createRemoteJWKSet, jwtVerify, decodeJwt } = require('jose');
 const { v4: uuidv4 } = require('uuid');
 
@@ -86,6 +91,7 @@ async function ensureOidcClient() {
   if (!OKTA_ISSUER || !OKTA_CLIENT_ID) {
     throw new Error('Okta OIDC not configured. Set OKTA_ISSUER and OKTA_CLIENT_ID.');
   }
+  const { Issuer } = await getOpenId();
   const oktaIssuer = await Issuer.discover(OKTA_ISSUER);
   oidcClient = new oktaIssuer.Client({
     client_id: OKTA_CLIENT_ID,
@@ -104,6 +110,7 @@ async function ensureGoogleClient() {
   if (!GOOGLE_CLIENT_ID) {
     throw new Error('Google OIDC not configured. Set GOOGLE_CLIENT_ID.');
   }
+  const { Issuer } = await getOpenId();
   const gIssuer = await Issuer.discover(issuerUrl);
   googleClient = new gIssuer.Client({
      client_id: GOOGLE_CLIENT_ID,
@@ -118,6 +125,7 @@ async function ensureGoogleClient() {
 
 async function getJwksForIssuer(iss) {
   if (issuerJwks.has(iss)) return issuerJwks.get(iss);
+  const { Issuer } = await getOpenId();
   const discovered = await Issuer.discover(iss);
   const r = createRemoteJWKSet(new URL(discovered.metadata.jwks_uri));
   issuerJwks.set(iss, r);
