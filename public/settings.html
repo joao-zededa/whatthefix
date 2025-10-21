@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Account Settings - WhatTheFix</title>
+    <link rel="stylesheet" href="/styles.css?v=4">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="settings-page">
+    <div class="container">
+        <header class="header">
+            <div class="header-content">
+                <h1 class="title">
+                    <i class="fas fa-code-branch"></i>
+                    WhatTheFix
+                </h1>
+                <p class="subtitle">Account Settings</p>
+                <div class="auth-controls">
+                    <!-- Login button for unauthenticated users -->
+                    <button id="loginBtn" class="search-button" style="padding:6px 10px;">
+                        <i class="fas fa-sign-in-alt"></i> Login
+                    </button>
+                    
+                    <!-- Profile dropdown for authenticated users -->
+                    <div id="profileDropdown" class="profile-dropdown" style="display:none;">
+                        <button id="profileButton" class="profile-button" aria-expanded="false" aria-haspopup="true">
+                            <div class="profile-avatar">
+                                <i class="fas fa-user"></i>
+                            </div>
+                            <span id="profileName" class="profile-name"></span>
+                            <i class="fas fa-chevron-down profile-chevron"></i>
+                        </button>
+                        <div id="profileMenu" class="profile-menu" role="menu">
+                            <div class="profile-menu-header">
+                                <div class="profile-menu-name" id="profileMenuName"></div>
+                                <div class="profile-menu-email" id="profileMenuEmail"></div>
+                            </div>
+                            <div class="profile-menu-divider"></div>
+                            <button class="profile-menu-item" onclick="navigateToSettings()" role="menuitem">
+                                <i class="fas fa-cog"></i>
+                                <span>Account Settings</span>
+                            </button>
+                            <button class="profile-menu-item logout-item" onclick="logout()" role="menuitem">
+                                <i class="fas fa-sign-out-alt"></i>
+                                <span>Log Out</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main class="main-content settings-main">
+            <section class="settings-hero">
+                <div class="settings-hero-copy">
+                    <span class="hero-eyebrow">GitHub Integration</span>
+                    <h2>Unlock the full rate limit & stay ahead</h2>
+                    <p>Bring in your personal access token to keep every search fast, reliable, and tailored to you.</p>
+                    <div class="settings-hero-highlights">
+                        <div class="hero-highlight">
+                            <div class="hero-highlight-icon">
+                                <i class="fas fa-bolt"></i>
+                            </div>
+                            <div>
+                                <strong>5,000 req/hr</strong>
+                                <span>vs 60 without authentication</span>
+                            </div>
+                        </div>
+                        <div class="hero-highlight">
+                            <div class="hero-highlight-icon">
+                                <i class="fas fa-lock"></i>
+                            </div>
+                            <div>
+                                <strong>Encrypted storage</strong>
+                                <span>Secrets stay private</span>
+                            </div>
+                        </div>
+                        <div class="hero-highlight">
+                            <div class="hero-highlight-icon">
+                                <i class="fas fa-chart-line"></i>
+                            </div>
+                            <div>
+                                <strong>Live validation</strong>
+                                <span>Instant token health checks</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="settings-hero-visual">
+                    <div class="hero-bubble">
+                        <i class="fas fa-user-shield"></i>
+                    </div>
+                    <div class="hero-bubble hero-bubble--secondary">
+                        <i class="fas fa-key"></i>
+                    </div>
+                </div>
+            </section>
+            <div class="settings-layout">
+                <section class="settings-primary">
+                    <div class="settings-card">
+                        <div class="settings-header">
+                            <h2><i class="fas fa-cog"></i> Account Settings</h2>
+                            <p class="settings-subtitle">Manage your GitHub integration and preferences</p>
+                        </div>
+
+                        <div class="settings-section">
+                            <div class="settings-section-header">
+                                <h3><i class="fas fa-github"></i> GitHub Personal Access Token</h3>
+                                <p class="settings-description">
+                                    Configure your GitHub Personal Access Token to increase API rate limits from 60 to 5,000 requests per hour.
+                                </p>
+                            </div>
+
+                            <div class="settings-form">
+                                <div class="form-group">
+                                    <label for="githubToken" class="form-label">
+                                        <i class="fas fa-key"></i>
+                                        GitHub Personal Access Token
+                                    </label>
+                                    <div class="input-group">
+                                        <input 
+                                            type="password" 
+                                            id="githubToken" 
+                                            class="form-input"
+                                            placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                                            autocomplete="off"
+                                        >
+                                        <button type="button" id="toggleTokenVisibility" class="input-toggle" aria-label="Toggle token visibility">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                    </div>
+                                    <div class="form-help">
+                                        <i class="fas fa-info-circle"></i>
+                                        Create a token at <a href="https://github.com/settings/tokens/new" target="_blank" rel="noopener">github.com/settings/tokens/new</a> with <code>public_repo</code> scope
+                                    </div>
+                                </div>
+
+                                <div class="form-actions">
+                                    <button type="button" id="saveToken" class="btn btn-primary">
+                                        <i class="fas fa-save"></i>
+                                        Save Token
+                                    </button>
+                                    <button type="button" id="clearToken" class="btn btn-secondary">
+                                        <i class="fas fa-trash"></i>
+                                        Clear Token
+                                    </button>
+                                    <button type="button" id="testToken" class="btn btn-outline">
+                                        <i class="fas fa-check"></i>
+                                        Test Token
+                                    </button>
+                                </div>
+
+                                <div id="tokenStatus" class="token-status" style="display: none;">
+                                    <div class="status-indicator">
+                                        <i class="fas fa-check-circle"></i>
+                                        <span>Token saved successfully</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="settings-footer">
+                            <button type="button" onclick="goHome()" class="btn btn-outline">
+                                <i class="fas fa-arrow-left"></i>
+                                Back to Search
+                            </button>
+                        </div>
+                    </div>
+                </section>
+
+                <aside class="settings-secondary">
+                    <div class="info-card">
+                        <div class="info-card-header">
+                            <h3><i class="fas fa-info-circle"></i> Why connect a token?</h3>
+                            <p>Get elite-level rate limits and keep your searches blazing fast.</p>
+                        </div>
+                        <div class="info-item">
+                            <i class="fas fa-rocket"></i>
+                            <div>
+                                <strong>Higher Rate Limits</strong>
+                                <p>Increase from 60 to 5,000 requests per hour</p>
+                            </div>
+                        </div>
+                        <div class="info-item">
+                            <i class="fas fa-shield-alt"></i>
+                            <div>
+                                <strong>Secure Storage</strong>
+                                <p>Your token is encrypted and stored securely on our servers</p>
+                            </div>
+                        </div>
+                        <div class="info-item">
+                            <i class="fas fa-user"></i>
+                            <div>
+                                <strong>Personal Use</strong>
+                                <p>Only you can access and modify your token</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="info-card tip-card">
+                        <div class="info-card-header">
+                            <h3><i class="fas fa-lightbulb"></i> Quick how-to</h3>
+                            <p>Generate a classic token with <code>public_repo</code> scope</p>
+                        </div>
+                        <ul class="tip-list">
+                            <li>Open GitHub → Settings → Developer settings → Personal access tokens.</li>
+                            <li>Create a new token, give it a memorable name, and select <code>public_repo</code>.</li>
+                            <li>Copy the token once — we'll encrypt it as soon as you hit save.</li>
+                        </ul>
+                        <a class="btn btn-outline info-cta" href="https://github.com/settings/tokens" target="_blank" rel="noopener">
+                            <i class="fas fa-external-link-alt"></i>
+                            Open GitHub settings
+                        </a>
+                    </div>
+                </aside>
+            </div>
+        </main>
+    </div>
+
+    <script src="/script.js"></script>
+    <script src="/settings.js"></script>
+</body>
+</html>

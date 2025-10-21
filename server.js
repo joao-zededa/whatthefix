@@ -401,15 +401,16 @@ const backportCache = {
 };
 
 // GitHub authentication headers
-const getGitHubHeaders = () => {
+const getGitHubHeaders = (userToken = null) => {
   const headers = {
     'Accept': 'application/vnd.github.v3+json',
     'User-Agent': 'EVE-OS-Fix-Finder'
   };
   
-  // Add authorization if token is available
-  if (process.env.GITHUB_TOKEN) {
-    headers['Authorization'] = `token ${process.env.GITHUB_TOKEN}`;
+  // Priority: user token > environment token
+  const token = userToken || process.env.GITHUB_TOKEN;
+  if (token) {
+    headers['Authorization'] = `token ${token}`;
   }
   
   return headers;
@@ -428,20 +429,28 @@ function delay(ms) {
 }
 
 // Helper function to make GitHub API requests with proper rate limiting
-async function makeGitHubRequest(url, params = {}) {
+async function makeGitHubRequest(url, params = {}, userToken = null) {
   try {
     // Add delay before each request to respect rate limits
     await delay(RATE_LIMIT_DELAY);
     
     const response = await axios.get(url, {
       params,
-      headers: getGitHubHeaders(),
+      headers: getGitHubHeaders(userToken),
       timeout: 15000 // Increased timeout
     });
+    
+    // Check for rate limit headers
+    const remaining = response.headers['x-ratelimit-remaining'];
+    if (remaining && parseInt(remaining) < 10) {
+      console.warn(`GitHub API rate limit warning: ${remaining} requests remaining`);
+    }
+    
     return response;
   } catch (error) {
     if (error.response && error.response.status === 403) {
-      console.error('GitHub API rate limit exceeded. Consider adding a GITHUB_TOKEN to your .env file');
+      const tokenType = userToken ? 'user' : 'environment';
+      console.error(`GitHub API rate limit exceeded with ${tokenType} token. Consider adding a GITHUB_TOKEN to your .env file`);
       throw new Error('API rate limit exceeded. Please try again later or contact administrator.');
     }
     throw error;
@@ -1757,7 +1766,7 @@ async function getCommitDetails(sha) {
 }
 
 // Search for commits by message or get commit by SHA
-async function searchCommits(query, type = 'message', page = 1, perPage = 30) {
+async function searchCommits(query, type = 'message', page = 1, perPage = 30, userToken = null) {
   try {
     // If query is a GitHub URL, resolve it to commits first (PR or commit URL)
     const ghUrlMatch = (query || '').match(/^https?:\/\/github\.com\/([^\/]+)\/([^\/]+)\/(pull\/(\d+)|commit\/([0-9a-fA-F]{7,40}))/i);
@@ -1770,7 +1779,7 @@ async function searchCommits(query, type = 'message', page = 1, perPage = 30) {
 
       if (prNum) {
         // Fetch commits from the PR and return them as results
-        const commitsResp = await makeGitHubRequest(`${GITHUB_API_BASE}/repos/${repoFull}/pulls/${prNum}/commits`, { per_page: 100 });
+        const commitsResp = await makeGitHubRequest(`${GITHUB_API_BASE}/repos/${repoFull}/pulls/${prNum}/commits`, { per_page: 100 }, userToken);
         const prCommits = commitsResp.data || [];
         const formatted = prCommits.map(c => ({
           sha: c.sha,
@@ -1790,7 +1799,7 @@ async function searchCommits(query, type = 'message', page = 1, perPage = 30) {
 
       if (commitShaFromUrl) {
         // Fetch a single commit
-        const response = await makeGitHubRequest(`${GITHUB_API_BASE}/repos/${repoFull}/commits/${commitShaFromUrl}`);
+        const response = await makeGitHubRequest(`${GITHUB_API_BASE}/repos/${repoFull}/commits/${commitShaFromUrl}`, {}, userToken);
         return {
           items: [response.data],
           total_count: 1,
@@ -1804,7 +1813,7 @@ async function searchCommits(query, type = 'message', page = 1, perPage = 30) {
     if (query.match(/^[a-f0-9]{7,40}$/i)) {
       console.log(`Searching by commit SHA: ${query}`);
       try {
-        const response = await makeGitHubRequest(`${GITHUB_API_BASE}/repos/${EVE_OS_REPO}/commits/${query}`);
+        const response = await makeGitHubRequest(`${GITHUB_API_BASE}/repos/${EVE_OS_REPO}/commits/${query}`, {}, userToken);
         return { 
           items: [response.data], 
           total_count: 1, 
@@ -1827,7 +1836,7 @@ async function searchCommits(query, type = 'message', page = 1, perPage = 30) {
       order: 'desc',
       per_page: perPage,
       page: page
-    });
+    }, userToken);
     
     const data = response.data;
     return {
@@ -1925,7 +1934,10 @@ app.get('/api/search/commits', async (req, res) => {
     const pageNum = parseInt(page) || 1;
     const perPageNum = Math.min(parseInt(per_page) || 30, 100); // Max 100 per page
     
-    const searchResult = await searchCommits(query, type, pageNum, perPageNum);
+    // Get user token if available
+    const userToken = req.session?.user?.githubToken;
+    
+    const searchResult = await searchCommits(query, type, pageNum, perPageNum, userToken);
     
     // Format the response
     const formattedCommits = searchResult.items.map(commit => ({
@@ -2160,6 +2172,157 @@ app.get('/', (req, res) => {
 // Serve provider selection login page
 app.get('/login', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
+// Serve account settings page
+app.get('/settings/account', ensureAuthenticated, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'settings.html'));
+});
+
+// -------- Settings API endpoints --------
+// Get user's GitHub token
+app.get('/api/settings/github-token', ensureAuthenticated, (req, res) => {
+  try {
+    const userId = req.session.user.id;
+    const token = req.session.user.githubToken || null;
+    
+    // Return masked token for security
+    const maskedToken = token ? token.substring(0, 8) + '...' + token.substring(token.length - 4) : null;
+    
+    res.json({ 
+      hasToken: !!token,
+      token: token, // Send full token for editing (it's already in session)
+      maskedToken 
+    });
+  } catch (error) {
+    console.error('Error getting GitHub token:', error);
+    res.status(500).json({ error: 'Failed to get GitHub token' });
+  }
+});
+
+// Save user's GitHub token
+app.post('/api/settings/github-token', ensureAuthenticated, async (req, res) => {
+  try {
+    const { token } = req.body;
+    const userId = req.session.user.id;
+    
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({ error: 'Token is required' });
+    }
+    
+    // Validate GitHub token format
+    const tokenPattern = /^(ghp_|gho_|ghu_|ghs_|ghr_)[a-zA-Z0-9_]+$/;
+    if (!tokenPattern.test(token)) {
+      return res.status(400).json({ error: 'Invalid GitHub token format' });
+    }
+    
+    // Test the token by making a simple API call
+    try {
+      const testResponse = await axios.get('https://api.github.com/user', {
+        headers: {
+          'Authorization': `token ${token}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'EVE-OS-Fix-Finder'
+        }
+      });
+      
+      if (testResponse.status !== 200) {
+        throw new Error('Token validation failed');
+      }
+    } catch (error) {
+      console.error('GitHub token validation failed:', error);
+      return res.status(400).json({ error: 'Invalid or expired GitHub token' });
+    }
+    
+    // Store token in session (in production, you'd want to encrypt and store in database)
+    req.session.user.githubToken = token;
+    
+    res.json({ 
+      success: true, 
+      message: 'GitHub token saved successfully',
+      maskedToken: token.substring(0, 8) + '...' + token.substring(token.length - 4)
+    });
+    
+  } catch (error) {
+    console.error('Error saving GitHub token:', error);
+    res.status(500).json({ error: 'Failed to save GitHub token' });
+  }
+});
+
+// Delete user's GitHub token
+app.delete('/api/settings/github-token', ensureAuthenticated, (req, res) => {
+  try {
+    const userId = req.session.user.id;
+    
+    // Remove token from session
+    delete req.session.user.githubToken;
+    
+    res.json({ 
+      success: true, 
+      message: 'GitHub token cleared successfully' 
+    });
+    
+  } catch (error) {
+    console.error('Error clearing GitHub token:', error);
+    res.status(500).json({ error: 'Failed to clear GitHub token' });
+  }
+});
+
+// Test GitHub token
+app.post('/api/settings/test-github-token', ensureAuthenticated, async (req, res) => {
+  try {
+    const { token } = req.body;
+    
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({ error: 'Token is required' });
+    }
+    
+    // Test the token by making API calls
+    try {
+      const [userResponse, rateLimitResponse] = await Promise.all([
+        axios.get('https://api.github.com/user', {
+          headers: {
+            'Authorization': `token ${token}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'EVE-OS-Fix-Finder'
+          }
+        }),
+        axios.get('https://api.github.com/rate_limit', {
+          headers: {
+            'Authorization': `token ${token}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'EVE-OS-Fix-Finder'
+          }
+        })
+      ]);
+      
+      if (userResponse.status !== 200 || rateLimitResponse.status !== 200) {
+        throw new Error('Token validation failed');
+      }
+      
+      const rateLimit = rateLimitResponse.data.rate.limit;
+      const user = userResponse.data;
+      
+      res.json({ 
+        success: true,
+        message: 'Token is valid',
+        rateLimit: rateLimit.toLocaleString(),
+        user: {
+          login: user.login,
+          name: user.name,
+          email: user.email
+        }
+      });
+      
+    } catch (error) {
+      console.error('GitHub token test failed:', error);
+      return res.status(400).json({ error: 'Invalid or expired GitHub token' });
+    }
+    
+  } catch (error) {
+    console.error('Error testing GitHub token:', error);
+    res.status(500).json({ error: 'Failed to test GitHub token' });
+  }
 });
 
 // Add rate limit info endpoint

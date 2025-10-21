@@ -39,6 +39,9 @@ function initializeEventListeners() {
         headerTitle.addEventListener('click', goHome);
     }
     
+    // Profile dropdown functionality
+    initializeProfileDropdown();
+    
     // Search functionality
     searchButton.addEventListener('click', performSearch);
     searchInput.addEventListener('keypress', function(e) {
@@ -174,25 +177,129 @@ async function fetchProfile() {
         const res = await fetch('/auth/me', { credentials: 'include' });
         const data = await res.json();
         const loginBtn = document.getElementById('loginBtn');
-        const logoutBtn = document.getElementById('logoutBtn');
-        const profileInfo = document.getElementById('profileInfo');
+        const profileDropdown = document.getElementById('profileDropdown');
+        
         if (data && data.authenticated) {
-            if (profileInfo) {
-                const name = data.name || data.email || 'User';
-                const roles = (data.roles || []).join(', ');
-                profileInfo.textContent = `${name}${roles ? ' · ' + roles : ''}`;
-                profileInfo.style.display = 'block';
-            }
+            // Show profile dropdown, hide login button
             if (loginBtn) loginBtn.style.display = 'none';
-            if (logoutBtn) logoutBtn.style.display = 'inline-flex';
+            if (profileDropdown) {
+                profileDropdown.style.display = 'flex';
+                
+                // Update profile information
+                const profileName = document.getElementById('profileName');
+                const profileMenuName = document.getElementById('profileMenuName');
+                const profileMenuEmail = document.getElementById('profileMenuEmail');
+                
+                const name = data.name || data.email || 'User';
+                const email = data.email || '';
+                
+                if (profileName) profileName.textContent = name;
+                if (profileMenuName) profileMenuName.textContent = name;
+                if (profileMenuEmail) profileMenuEmail.textContent = email;
+            }
         } else {
-            if (profileInfo) profileInfo.style.display = 'none';
+            // Show login button, hide profile dropdown
             if (loginBtn) loginBtn.style.display = 'inline-flex';
-            if (logoutBtn) logoutBtn.style.display = 'none';
+            if (profileDropdown) profileDropdown.style.display = 'none';
         }
     } catch (_) {
         // Ignore
     }
+}
+
+// Profile dropdown functionality
+function initializeProfileDropdown() {
+    const profileButton = document.getElementById('profileButton');
+    const profileMenu = document.getElementById('profileMenu');
+    
+    if (profileButton && profileMenu) {
+        // Toggle dropdown on button click
+        profileButton.addEventListener('click', function(e) {
+            e.stopPropagation();
+            toggleProfileDropdown();
+        });
+        
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!profileButton.contains(e.target) && !profileMenu.contains(e.target)) {
+                closeProfileDropdown();
+            }
+        });
+        
+        // Handle keyboard navigation
+        profileButton.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                toggleProfileDropdown();
+            } else if (e.key === 'Escape') {
+                closeProfileDropdown();
+            }
+        });
+        
+        // Handle menu item keyboard navigation
+        const menuItems = profileMenu.querySelectorAll('.profile-menu-item');
+        menuItems.forEach((item, index) => {
+            item.addEventListener('keydown', function(e) {
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    const nextItem = menuItems[index + 1];
+                    if (nextItem) nextItem.focus();
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    const prevItem = menuItems[index - 1];
+                    if (prevItem) prevItem.focus();
+                    else profileButton.focus();
+                } else if (e.key === 'Escape') {
+                    closeProfileDropdown();
+                    profileButton.focus();
+                }
+            });
+        });
+    }
+}
+
+function toggleProfileDropdown() {
+    const profileButton = document.getElementById('profileButton');
+    const profileMenu = document.getElementById('profileMenu');
+    
+    if (profileMenu.classList.contains('show')) {
+        closeProfileDropdown();
+    } else {
+        openProfileDropdown();
+    }
+}
+
+function openProfileDropdown() {
+    const profileButton = document.getElementById('profileButton');
+    const profileMenu = document.getElementById('profileMenu');
+    
+    profileButton.setAttribute('aria-expanded', 'true');
+    profileMenu.classList.add('show');
+    
+    // Focus first menu item
+    const firstMenuItem = profileMenu.querySelector('.profile-menu-item');
+    if (firstMenuItem) {
+        setTimeout(() => firstMenuItem.focus(), 100);
+    }
+}
+
+function closeProfileDropdown() {
+    const profileButton = document.getElementById('profileButton');
+    const profileMenu = document.getElementById('profileMenu');
+    
+    profileButton.setAttribute('aria-expanded', 'false');
+    profileMenu.classList.remove('show');
+}
+
+// Navigation functions
+function navigateToSettings() {
+    closeProfileDropdown();
+    window.location.href = '/settings/account';
+}
+
+function logout() {
+    closeProfileDropdown();
+    window.location.href = '/auth/logout';
 }
 
 // Function to detect if input is a commit SHA

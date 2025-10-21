@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WhatTheFix - Cobalt2 Theme</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=3">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 </head>
@@ -18,13 +18,36 @@
                 </h1>
                 <p class="subtitle">Search for fixes and commits in the EVE-OS repository</p>
                 <div class="auth-controls" style="margin-left:auto; display:flex; align-items:center; gap:12px;">
-                    <div id="profileInfo" style="display:none; font-size: 0.9rem;"></div>
+                    <!-- Login button for unauthenticated users -->
                     <button id="loginBtn" class="search-button" style="padding:6px 10px;">
                         <i class="fas fa-sign-in-alt"></i> Login
                     </button>
-                    <button id="logoutBtn" class="search-button" style="display:none; padding:6px 10px; background:#ef4444;">
-                        <i class="fas fa-sign-out-alt"></i> Logout
-                    </button>
+                    
+                    <!-- Profile dropdown for authenticated users -->
+                    <div id="profileDropdown" class="profile-dropdown" style="display:none;">
+                        <button id="profileButton" class="profile-button" aria-expanded="false" aria-haspopup="true">
+                            <div class="profile-avatar">
+                                <i class="fas fa-user"></i>
+                            </div>
+                            <span id="profileName" class="profile-name"></span>
+                            <i class="fas fa-chevron-down profile-chevron"></i>
+                        </button>
+                        <div id="profileMenu" class="profile-menu" role="menu">
+                            <div class="profile-menu-header">
+                                <div class="profile-menu-name" id="profileMenuName"></div>
+                                <div class="profile-menu-email" id="profileMenuEmail"></div>
+                            </div>
+                            <div class="profile-menu-divider"></div>
+                            <button class="profile-menu-item" onclick="navigateToSettings()" role="menuitem">
+                                <i class="fas fa-cog"></i>
+                                <span>Account Settings</span>
+                            </button>
+                            <button class="profile-menu-item logout-item" onclick="logout()" role="menuitem">
+                                <i class="fas fa-sign-out-alt"></i>
+                                <span>Log Out</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </header>
