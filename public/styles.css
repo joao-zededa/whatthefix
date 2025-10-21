@@ -2198,20 +2198,26 @@ body {
 
 .no-backports-message {
     text-align: center;
-    padding: 40px 20px;
+    padding: 25px 20px;
     color: #9EFFFF;
-    opacity: 0.7;
+    opacity: 0.8;
 }
 
 .no-backports-message i {
-    font-size: 3rem;
-    margin-bottom: 15px;
+    font-size: 2rem;
+    margin-bottom: 12px;
     color: #2AFFDF;
+    opacity: 0.6;
 }
 
 .no-backports-message h3 {
     color: #2AFFDF;
     margin-bottom: 10px;
+}
+
+.no-backports-message p {
+    font-size: 0.9rem;
+    margin: 0;
 }
 
 .loading-backports {
@@ -2232,6 +2238,62 @@ body {
     100% { transform: rotate(360deg); }
 }
 
+/* Backport section within tags section */
+.tags-section .backport-section {
+    margin-top: 30px;
+    background: transparent;
+}
+
+/* Beautiful divider with text */
+.backport-divider {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 20px 20px 25px 20px;
+}
+
+.divider-line {
+    flex: 1;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #2AFFDF, transparent);
+    opacity: 0.3;
+}
+
+.divider-text {
+    color: #2AFFDF;
+    font-size: 0.95rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    opacity: 0.9;
+}
+
+.divider-text i {
+    font-size: 1rem;
+    color: #ffc600;
+}
+
+.tags-section .backport-summary {
+    padding: 0 20px 20px 20px;
+}
+
+.tags-section .backport-summary .summary-cards {
+    background: rgba(21, 35, 45, 0.3);
+    border: 1px solid rgba(42, 255, 223, 0.15);
+    border-radius: 12px;
+    padding: 15px;
+}
+
+.tags-section .backport-commits-list {
+    margin: 0;
+    background: #35434d;
+    border-radius: 0 0 16px 16px;
+}
+
 /* Responsive adjustments for backport analysis */
 @media (max-width: 768px) {
     .backport-summary .summary-cards {
@@ -2248,5 +2310,19 @@ body {
         flex-direction: column;
         gap: 5px;
         align-items: flex-start;
+    }
+    
+    .backport-divider {
+        padding: 15px 15px 20px 15px;
+        gap: 10px;
+    }
+    
+    .divider-text {
+        font-size: 0.85rem;
+        letter-spacing: 0.5px;
+    }
+    
+    .tags-section .backport-summary {
+        padding: 0 15px 15px 15px;
     }
 } 

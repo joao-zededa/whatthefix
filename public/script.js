@@ -834,9 +834,66 @@ function clearResults() {
     isLoadingMore = false;
 }
 
-// Show commit details with automatic tag loading
+// Generate backport section HTML
+function generateBackportSection(data) {
+    const { backportedCommits, summary } = data;
+    
+    if (!backportedCommits || backportedCommits.length === 0) {
+        return `
+            <div class="backport-section">
+                <div class="backport-divider">
+                    <span class="divider-line"></span>
+                    <span class="divider-text">
+                        <i class="fas fa-code-branch"></i>
+                        Backported to Stable Branches
+                    </span>
+                    <span class="divider-line"></span>
+                </div>
+                <div class="no-backports-message">
+                    <i class="fas fa-info-circle"></i>
+                    <p>This commit has not been backported to any stable branches</p>
+                </div>
+            </div>
+        `;
+    }
+    
+    return `
+        <div class="backport-section">
+            <div class="backport-divider">
+                <span class="divider-line"></span>
+                <span class="divider-text">
+                    <i class="fas fa-code-branch"></i>
+                    Backported to Stable Branches
+                </span>
+                <span class="divider-line"></span>
+            </div>
+            <div class="backport-summary">
+                <div class="summary-cards">
+                    <div class="summary-card">
+                        <div class="card-value">${summary.totalBackports}</div>
+                        <div class="card-label">Backports</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="card-value">${summary.branchesWithBackports}</div>
+                        <div class="card-label">Branches</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="card-value">${summary.totalTagsAcrossBackports}</div>
+                        <div class="card-label">Tags</div>
+                    </div>
+                </div>
+            </div>
+            <div class="backport-commits-list">
+                ${backportedCommits.map(commit => createBackportCommitItem(commit)).join('')}
+            </div>
+        </div>
+    `;
+}
+
+// Show commit details with automatic tag and backport loading
 async function showCommitDetailsWithTags(commit) {
     currentCommit = commit; // Store for backport analysis
+    currentBackportData = null; // Reset backport data
     const modal = document.getElementById('commitModal');
     
     // Show beautiful commit details immediately
@@ -882,23 +939,6 @@ async function showCommitDetailsWithTags(commit) {
                     </div>
                 </div>
                 
-                <!-- Backport Analysis Section -->
-                <div class="commit-detail">
-                    <h4><i class="fas fa-code-branch"></i> Backport Analysis</h4>
-                    <div class="backport-actions">
-                        <button onclick="analyzeBackports()" class="analyze-backports-button">
-                            <i class="fas fa-project-diagram"></i>
-                            Find Backported Commits
-                        </button>
-                        <small class="action-note">Find all backported versions of this commit across stable branches</small>
-                    </div>
-                </div>
-                
-                <!-- Backport Results Section -->
-                <div id="backportResults" class="commit-detail backport-results-section" style="display: none;">
-                    <!-- Results will be populated here -->
-                </div>
-                
                 <div class="tags-section">
                     <div class="tags-header">
                         <h3><i class="fas fa-tags"></i> Tags Containing This Commit</h3>
@@ -909,7 +949,7 @@ async function showCommitDetailsWithTags(commit) {
                             <div class="spinner-circle"></div>
                             <div class="spinner-circle"></div>
                         </div>
-                        <p class="loading-text">Finding tags containing this commit...</p>
+                        <p class="loading-text">Finding tags and backports...</p>
                         <div class="loading-subtitle">This may take a moment</div>
                     </div>
                 </div>
@@ -919,17 +959,28 @@ async function showCommitDetailsWithTags(commit) {
     
     modal.style.display = 'block';
     
-    // Start loading tags immediately in background
+    // Start loading tags and backports immediately in background
     try {
-        const response = await fetch(`/api/commits/${commit.sha}/tags`);
+        // Load both tags and backports in parallel
+        const [tagResponse, backportResponse] = await Promise.all([
+            fetch(`/api/commits/${commit.sha}/tags`),
+            fetch(`/api/commits/${commit.sha}/backports`)
+        ]);
         
-        if (!response.ok) {
+        if (!tagResponse.ok) {
             throw new Error('Failed to fetch tags');
         }
         
-        const tagData = await response.json();
+        const tagData = await tagResponse.json();
+        let backportData = null;
         
-        // Update the modal with beautiful tag results
+        // Try to get backport data, but don't fail if it's not available
+        if (backportResponse.ok) {
+            backportData = await backportResponse.json();
+            currentBackportData = backportData;
+        }
+        
+        // Update the modal with beautiful tag results and backports
         const tagsSection = document.querySelector('.tags-section');
         if (tagData.tags && tagData.tags.length > 0) {
             const latest = tagData.summary?.latestVersion || 'None';
@@ -980,6 +1031,9 @@ async function showCommitDetailsWithTags(commit) {
                     <i class="fas fa-search"></i>
                     <p>No tags found matching your search</p>
                 </div>
+                
+                <!-- Backport Results Section (at the bottom) -->
+                ${backportData ? generateBackportSection(backportData) : ''}
             `;
             // Add toggle listener with card updates
             document.getElementById('ltsOnlyToggle').addEventListener('change', function() {
@@ -1025,6 +1079,9 @@ async function showCommitDetailsWithTags(commit) {
                     <p>No tags found containing this commit</p>
                     <div class="no-tags-subtitle">This commit may not be included in any released version</div>
                 </div>
+                
+                <!-- Backport Results Section (at the bottom) -->
+                ${backportData ? generateBackportSection(backportData) : ''}
             `;
         }
         
@@ -1042,6 +1099,9 @@ async function showCommitDetailsWithTags(commit) {
                     <i class="fas fa-redo"></i> Try Again
                 </button>
             </div>
+            
+            <!-- Backport Results Section (at the bottom) -->
+            ${currentBackportData ? generateBackportSection(currentBackportData) : ''}
         `;
     }
 }
