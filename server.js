@@ -3,6 +3,8 @@ const cors = require('cors');
 const axios = require('axios');
 const path = require('path');
 require('dotenv').config();
+
+console.log('NODE_ENV:', process.env.NODE_ENV);
 const fs = require('fs');
 const { execSync, exec } = require('child_process');
 const { promisify } = require('util');
@@ -11,11 +13,29 @@ const os = require('os');
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
 const session = require('express-session');
-let _oidc = null;
-async function getOpenId() {
-  if (_oidc) return _oidc;
-  _oidc = await import('openid-client');
-  return _oidc;
+// Lazy load openid-client v6 API
+let discovery, randomState, randomNonce, randomPKCECodeVerifier, calculatePKCECodeChallenge, buildAuthorizationUrl, buildEndSessionUrl, authorizationCodeGrant;
+async function getOpenIdClient() {
+  if (discovery && randomState) return { discovery, randomState, randomNonce, randomPKCECodeVerifier, calculatePKCECodeChallenge, buildAuthorizationUrl, buildEndSessionUrl, authorizationCodeGrant };
+  
+  try {
+    console.log('Loading openid-client v6...');
+    const openidClient = await import('openid-client');
+    
+    discovery = openidClient.discovery;
+    randomState = openidClient.randomState;
+    randomNonce = openidClient.randomNonce;
+    randomPKCECodeVerifier = openidClient.randomPKCECodeVerifier;
+    calculatePKCECodeChallenge = openidClient.calculatePKCECodeChallenge;
+    buildAuthorizationUrl = openidClient.buildAuthorizationUrl;
+    buildEndSessionUrl = openidClient.buildEndSessionUrl;
+    authorizationCodeGrant = openidClient.authorizationCodeGrant;
+    
+    return { discovery, randomState, randomNonce, randomPKCECodeVerifier, calculatePKCECodeChallenge, buildAuthorizationUrl, buildEndSessionUrl, authorizationCodeGrant };
+  } catch (error) {
+    console.error('Failed to import openid-client:', error);
+    throw new Error('openid-client library not available. Run: npm install openid-client');
+  }
 }
 const { createRemoteJWKSet, jwtVerify, decodeJwt } = require('jose');
 const { v4: uuidv4 } = require('uuid');
@@ -61,7 +81,7 @@ app.use(session({
 
 app.use(express.static('public'));
 
-// -------- OIDC configuration (Okta + Google) --------
+// -------- OIDC configuration (Okta only) --------
 const OKTA_ISSUER = process.env.OKTA_ISSUER; // e.g., https://dev-xxxxx.okta.com/oauth2/default
 const OKTA_CLIENT_ID = process.env.OKTA_CLIENT_ID;
 const OKTA_CLIENT_SECRET = process.env.OKTA_CLIENT_SECRET; // required for server-side code flow
@@ -69,67 +89,48 @@ const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`; // External
 const OIDC_REDIRECT_PATH = process.env.OIDC_REDIRECT_PATH || '/auth/callback';
 const OIDC_REDIRECT_URI = process.env.OKTA_REDIRECT_URI || `${BASE_URL}${OIDC_REDIRECT_PATH}`;
 const POST_LOGOUT_REDIRECT_URI = process.env.OKTA_POST_LOGOUT_REDIRECT_URI || `${BASE_URL}/`;
-const OIDC_SCOPES = (process.env.OKTA_SCOPES || 'openid profile email groups offline_access').split(/[\s,]+/).filter(Boolean).join(' ');
+const OIDC_SCOPES = (process.env.OKTA_SCOPES || 'openid profile email').split(/[\s,]+/).filter(Boolean).join(' ');
 
 let oidcClient = null;
 let jwks = null;
-
-// Google config
-const GOOGLE_ISSUER = process.env.GOOGLE_ISSUER || 'https://accounts.google.com';
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
-const GOOGLE_REDIRECT_PATH = process.env.GOOGLE_REDIRECT_PATH || '/auth/google/callback';
-const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || `${BASE_URL}${GOOGLE_REDIRECT_PATH}`;
-const GOOGLE_POST_LOGOUT_REDIRECT_URI = process.env.GOOGLE_POST_LOGOUT_REDIRECT_URI || `${BASE_URL}/`;
-const GOOGLE_SCOPES = (process.env.GOOGLE_SCOPES || 'openid profile email offline_access').split(/[\s,]+/).filter(Boolean).join(' ');
-
-let googleClient = null;
 const issuerJwks = new Map();
 
 async function ensureOidcClient() {
   if (oidcClient) return oidcClient;
-  if (!OKTA_ISSUER || !OKTA_CLIENT_ID) {
+  
+  const issuer = process.env.OKTA_ISSUER;
+  const clientId = process.env.OKTA_CLIENT_ID;
+  
+  if (!issuer || !clientId) {
     throw new Error('Okta OIDC not configured. Set OKTA_ISSUER and OKTA_CLIENT_ID.');
   }
-  const { Issuer } = await getOpenId();
-  const oktaIssuer = await Issuer.discover(OKTA_ISSUER);
-  oidcClient = new oktaIssuer.Client({
-    client_id: OKTA_CLIENT_ID,
-    client_secret: OKTA_CLIENT_SECRET,
-    redirect_uris: [OIDC_REDIRECT_URI],
-    response_types: ['code']
-  });
-  jwks = createRemoteJWKSet(new URL(oktaIssuer.metadata.jwks_uri));
-  issuerJwks.set(OKTA_ISSUER, jwks);
-  return oidcClient;
+  
+  try {
+    const { discovery } = await getOpenIdClient();
+    const configuration = await discovery(new URL(issuer), clientId);
+    oidcClient = configuration;
+    // Note: openid-client v6 discovery returns empty config, but buildAuthorizationUrl works
+    return oidcClient;
+  } catch (error) {
+    console.error('Failed to discover Okta issuer:', error);
+    throw new Error(`Failed to connect to Okta: ${error.message}`);
+  }
 }
 
-async function ensureGoogleClient() {
-  if (googleClient) return googleClient;
-  const issuerUrl = GOOGLE_ISSUER;
-  if (!GOOGLE_CLIENT_ID) {
-    throw new Error('Google OIDC not configured. Set GOOGLE_CLIENT_ID.');
-  }
-  const { Issuer } = await getOpenId();
-  const gIssuer = await Issuer.discover(issuerUrl);
-  googleClient = new gIssuer.Client({
-     client_id: GOOGLE_CLIENT_ID,
-     client_secret: GOOGLE_CLIENT_SECRET,
-     redirect_uris: [GOOGLE_REDIRECT_URI],
-     response_types: ['code']
-  });
-  const gJwks = createRemoteJWKSet(new URL(gIssuer.metadata.jwks_uri));
-  issuerJwks.set(gIssuer.issuer, gJwks);
-  return googleClient;
-}
 
 async function getJwksForIssuer(iss) {
   if (issuerJwks.has(iss)) return issuerJwks.get(iss);
-  const { Issuer } = await getOpenId();
-  const discovered = await Issuer.discover(iss);
-  const r = createRemoteJWKSet(new URL(discovered.metadata.jwks_uri));
-  issuerJwks.set(iss, r);
-  return r;
+  
+  try {
+    const { discovery } = await getOpenIdClient();
+    const configuration = await discovery(new URL(iss), OKTA_CLIENT_ID);
+    const r = createRemoteJWKSet(new URL(configuration.jwks_uri));
+    issuerJwks.set(iss, r);
+    return r;
+  } catch (error) {
+    console.error('Failed to discover issuer:', iss, error);
+    throw new Error(`Failed to discover issuer ${iss}: ${error.message}`);
+  }
 }
 
 function mapGroupsToRoles(groups) {
@@ -158,30 +159,6 @@ function mapGroupsToRoles(groups) {
   return Array.from(roles);
 }
 
-function mapGoogleToRoles(email, hostedDomain) {
-  const roles = new Set();
-  const emailMap = process.env.GOOGLE_EMAIL_ROLE_MAP || '';
-  const hdMap = process.env.GOOGLE_HD_ROLE_MAP || '';
-  if (email && emailMap) {
-    const pairs = emailMap.split(',').map(s => s.trim()).filter(Boolean);
-    for (const pair of pairs) {
-      const [role, emailsStr] = pair.split(':');
-      if (!role || !emailsStr) continue;
-      const emails = emailsStr.split('|').map(s => s.trim().toLowerCase());
-      if (emails.includes(email.toLowerCase())) roles.add(role.trim());
-    }
-  }
-  if (hostedDomain && hdMap) {
-    const pairs = hdMap.split(',').map(s => s.trim()).filter(Boolean);
-    for (const pair of pairs) {
-      const [role, domainsStr] = pair.split(':');
-      if (!role || !domainsStr) continue;
-      const domains = domainsStr.split('|').map(s => s.trim().toLowerCase());
-      if (domains.includes(String(hostedDomain).toLowerCase())) roles.add(role.trim());
-    }
-  }
-  return Array.from(roles);
-}
 
 function ensureAuthenticated(req, res, next) {
   if (req.session && req.session.user) return next();
@@ -202,13 +179,17 @@ function requireRole(required) {
 // -------- Auth routes --------
 app.get('/auth/login', async (req, res) => {
   try {
-    const client = await ensureOidcClient();
-    const state = generators.state();
-    const nonce = generators.nonce();
-    const codeVerifier = generators.codeVerifier();
-    const codeChallenge = generators.codeChallenge(codeVerifier);
+    const config = await ensureOidcClient();
+    const { randomState, randomNonce, randomPKCECodeVerifier, calculatePKCECodeChallenge, buildAuthorizationUrl } = await getOpenIdClient();
+    
+    const state = randomState();
+    const nonce = randomNonce();
+    const codeVerifier = randomPKCECodeVerifier();
+    const codeChallenge = await calculatePKCECodeChallenge(codeVerifier);
+    
     req.session.oidc = { state, nonce, codeVerifier };
-    const authUrl = client.authorizationUrl({
+    
+    const authUrl = buildAuthorizationUrl(config, {
       scope: OIDC_SCOPES,
       state,
       nonce,
@@ -216,6 +197,7 @@ app.get('/auth/login', async (req, res) => {
       code_challenge_method: 'S256',
       redirect_uri: OIDC_REDIRECT_URI
     });
+    
     return res.redirect(authUrl);
   } catch (e) {
     return res.status(500).json({ error: 'Failed to initiate login', message: e.message });
@@ -224,25 +206,49 @@ app.get('/auth/login', async (req, res) => {
 
 app.get(OIDC_REDIRECT_PATH, async (req, res) => {
   try {
-    const client = await ensureOidcClient();
-    const params = client.callbackParams(req);
-    if (!req.session.oidc || params.state !== req.session.oidc.state) {
+    // Extract the authorization code from the callback
+    const code = req.query.code;
+    const state = req.query.state;
+    
+    if (!req.session.oidc || state !== req.session.oidc.state) {
       return res.status(400).send('Invalid state');
     }
-    const tokenSet = await client.callback(OIDC_REDIRECT_URI, params, {
-      state: req.session.oidc.state,
-      nonce: req.session.oidc.nonce,
+    
+    // Construct the token endpoint URL manually
+    // Okta's token endpoint is always at {issuer}/v1/token
+    const tokenEndpoint = `${OKTA_ISSUER}/v1/token`;
+    
+    // Make a direct HTTP request to the token endpoint
+    const tokenResponse = await axios.post(tokenEndpoint, new URLSearchParams({
+      grant_type: 'authorization_code',
+      code: code,
+      redirect_uri: OIDC_REDIRECT_URI,
+      client_id: OKTA_CLIENT_ID,
+      client_secret: OKTA_CLIENT_SECRET,
       code_verifier: req.session.oidc.codeVerifier
+    }), {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      }
     });
-
-    // Validate basic token claims
-    const claims = tokenSet.claims();
-    const groups = claims.groups || [];
+    
+    if (tokenResponse.status !== 200) {
+      console.error('Token exchange failed:', tokenResponse.status, tokenResponse.data);
+      throw new Error(`Token exchange failed: ${tokenResponse.status} ${tokenResponse.statusText}`);
+    }
+    
+    const tokenSet = tokenResponse.data;
+    
+    // Decode the ID token to get claims (it's a JWT)
+    const idTokenParts = tokenSet.id_token.split('.');
+    const idTokenPayload = JSON.parse(Buffer.from(idTokenParts[1], 'base64').toString());
+    
+    const groups = idTokenPayload.groups || [];
     const roles = mapGroupsToRoles(groups);
     req.session.user = {
-      id: claims.sub,
-      name: claims.name || claims.preferred_username || claims.email,
-      email: claims.email,
+      id: idTokenPayload.sub,
+      name: idTokenPayload.name || idTokenPayload.preferred_username || idTokenPayload.email,
+      email: idTokenPayload.email,
       groups,
       roles,
       idToken: tokenSet.id_token // kept temporarily for logout; not sent to client
@@ -254,6 +260,7 @@ app.get(OIDC_REDIRECT_PATH, async (req, res) => {
     delete req.session.oidc;
     return res.redirect('/');
   } catch (e) {
+    console.error('Login callback failed:', e);
     return res.status(500).send(`Login callback failed: ${e.message}`);
   }
 });
@@ -262,8 +269,8 @@ app.get('/auth/me', (req, res) => {
   if (!req.session || !req.session.user) {
     return res.status(200).json({ authenticated: false });
   }
-  const { id, name, email, groups, roles, provider } = req.session.user;
-  return res.json({ authenticated: true, id, name, email, groups, roles, provider });
+  const { id, name, email, groups, roles } = req.session.user;
+  return res.json({ authenticated: true, id, name, email, groups, roles });
 });
 
 app.post('/auth/refresh', async (req, res) => {
@@ -286,17 +293,19 @@ app.post('/auth/refresh', async (req, res) => {
 
 app.get('/auth/logout', async (req, res) => {
   try {
-    const provider = req.session?.user?.provider;
     const idTokenHint = req.session?.user?.idToken;
-    if (provider === 'okta' && idTokenHint) {
+    if (idTokenHint) {
       const client = await ensureOidcClient();
-      const endUrl = client.endSessionUrl({ id_token_hint: idTokenHint, post_logout_redirect_uri: POST_LOGOUT_REDIRECT_URI, state: uuidv4() });
+      const endUrl = client.endSessionUrl({ 
+        id_token_hint: idTokenHint, 
+        post_logout_redirect_uri: POST_LOGOUT_REDIRECT_URI, 
+        state: uuidv4() 
+      });
       req.session.destroy(() => {});
       return res.redirect(endUrl);
     }
-    const redirectUrl = provider === 'google' ? GOOGLE_POST_LOGOUT_REDIRECT_URI : POST_LOGOUT_REDIRECT_URI;
     req.session.destroy(() => {});
-    return res.redirect(redirectUrl);
+    return res.redirect(POST_LOGOUT_REDIRECT_URI);
   } catch (e) {
     return res.redirect(POST_LOGOUT_REDIRECT_URI);
   }
@@ -334,64 +343,6 @@ app.get('/api/protected', ensureAuthenticated, requireRole(['admin', 'editor']),
   res.json({ message: 'Protected data', user: req.session.user });
 });
 
-// -------- Google Auth routes --------
-app.get('/auth/google/login', async (req, res) => {
-  try {
-    const client = await ensureGoogleClient();
-    const state = generators.state();
-    const nonce = generators.nonce();
-    const codeVerifier = generators.codeVerifier();
-    const codeChallenge = generators.codeChallenge(codeVerifier);
-    req.session.oidcGoogle = { state, nonce, codeVerifier };
-    const authUrl = client.authorizationUrl({
-      scope: GOOGLE_SCOPES,
-      state,
-      nonce,
-      code_challenge: codeChallenge,
-      code_challenge_method: 'S256',
-      redirect_uri: GOOGLE_REDIRECT_URI,
-      access_type: 'offline',
-      prompt: 'consent'
-    });
-    return res.redirect(authUrl);
-  } catch (e) {
-    return res.status(500).json({ error: 'Failed to initiate Google login', message: e.message });
-  }
-});
-
-app.get(GOOGLE_REDIRECT_PATH, async (req, res) => {
-  try {
-    const client = await ensureGoogleClient();
-    const params = client.callbackParams(req);
-    if (!req.session.oidcGoogle || params.state !== req.session.oidcGoogle.state) {
-      return res.status(400).send('Invalid state');
-    }
-    const tokenSet = await client.callback(GOOGLE_REDIRECT_URI, params, {
-      state: req.session.oidcGoogle.state,
-      nonce: req.session.oidcGoogle.nonce,
-      code_verifier: req.session.oidcGoogle.codeVerifier
-    });
-    const claims = tokenSet.claims();
-    const roles = mapGoogleToRoles(claims.email, claims.hd);
-    req.session.user = {
-      id: claims.sub,
-      name: claims.name || claims.email,
-      email: claims.email,
-      groups: [],
-      roles,
-      idToken: tokenSet.id_token,
-      provider: 'google'
-    };
-    req.session.tokens = {
-      refresh_token: tokenSet.refresh_token || null,
-      expires_at: tokenSet.expires_at || null
-    };
-    delete req.session.oidcGoogle;
-    return res.redirect('/');
-  } catch (e) {
-    return res.status(500).send(`Google login callback failed: ${e.message}`);
-  }
-});
 
 // Test-only helper to simulate login
 if (process.env.NODE_ENV === 'test') {
@@ -1959,7 +1910,10 @@ async function searchTags(query, page = 1, perPage = 30) {
   }
 }
 
-// API Routes
+// API Routes - All protected with authentication
+// Apply authentication middleware to all /api routes
+app.use('/api', ensureAuthenticated);
+
 app.get('/api/search/commits', async (req, res) => {
   try {
     const { query, type = 'message', page = 1, per_page = 30 } = req.query;
@@ -2275,17 +2229,20 @@ async function warmUpCache() {
   console.log('Cache will be populated on first use');
 }
 
-app.listen(PORT, () => {
-  console.log(`EVE-OS Fix Finder server running on port ${PORT}`);
-  console.log(`Visit http://localhost:${PORT} to use the application`);
-  
-  if (process.env.GITHUB_TOKEN) {
-    console.log('GitHub token configured - higher rate limits available');
-  } else {
-    console.log('No GitHub token found - limited to 60 requests/hour');
-    console.log('Add GITHUB_TOKEN to .env file for 5,000 requests/hour');
-  }
-  
-  // Warm up cache in the background
-  setTimeout(warmUpCache, 1000);
-});
+// Only start server if not in test mode
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    console.log(`EVE-OS Fix Finder server running on port ${PORT}`);
+    console.log(`Visit http://localhost:${PORT} to use the application`);
+    
+    if (process.env.GITHUB_TOKEN) {
+      console.log('GitHub token configured - higher rate limits available');
+    } else {
+      console.log('No GitHub token found - limited to 60 requests/hour');
+      console.log('Add GITHUB_TOKEN to .env file for 5,000 requests/hour');
+    }
+    
+    // Warm up cache in the background
+    setTimeout(warmUpCache, 1000);
+  });
+}

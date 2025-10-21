@@ -1,26 +1,38 @@
-node:events:496
-      throw er; // Unhandled 'error' event
-      ^
 
-Error: listen EADDRINUSE: address already in use :::3000
-    at Server.setupListenHandle [as _listen2] (node:net:1939:16)
-    at listenInCluster (node:net:1996:12)
-    at Server.listen (node:net:2101:7)
-    at Function.listen (/Users/jmpellizzer/Documents/GitHub/whatthefix/node_modules/express/lib/application.js:635:24)
-    at Object.<anonymous> (/Users/jmpellizzer/Documents/GitHub/whatthefix/server.js:636:5)
-    at Module._compile (node:internal/modules/cjs/loader:1730:14)
-    at Object..js (node:internal/modules/cjs/loader:1895:10)
-    at Module.load (node:internal/modules/cjs/loader:1465:32)
-    at Function._load (node:internal/modules/cjs/loader:1282:12)
-    at TracingChannel.traceSync (node:diagnostics_channel:322:14)
-Emitted 'error' event on Server instance at:
-    at emitErrorNT (node:net:1975:8)
-    at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
-  code: 'EADDRINUSE',
-  errno: -48,
-  syscall: 'listen',
-  address: '::',
-  port: 3000
-}
+> eveos-fix-finder@1.0.0 dev
+> nodemon server.js
 
-Node.js v22.16.0
+[33m[nodemon] 3.1.10[39m
+[33m[nodemon] to restart at any time, enter `rs`[39m
+[33m[nodemon] watching path(s): *.*[39m
+[33m[nodemon] watching extensions: js,mjs,cjs,json[39m
+[32m[nodemon] starting `node server.js`[39m
+NODE_ENV: development
+EVE-OS Fix Finder server running on port 3000
+Visit http://localhost:3000 to use the application
+GitHub token configured - higher rate limits available
+Fetching latest changes in local repo...
+Local repo up to date
+Cache warming disabled to preserve API rate limits
+Cache will be populated on first use
+Loading openid-client v6...
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `node server.js`[39m
+NODE_ENV: development
+EVE-OS Fix Finder server running on port 3000
+Visit http://localhost:3000 to use the application
+GitHub token configured - higher rate limits available
+Fetching latest changes in local repo...
+Local repo up to date
+Cache warming disabled to preserve API rate limits
+Cache will be populated on first use
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `node server.js`[39m
+NODE_ENV: development
+EVE-OS Fix Finder server running on port 3000
+Visit http://localhost:3000 to use the application
+GitHub token configured - higher rate limits available
+Fetching latest changes in local repo...
+Local repo up to date
+Cache warming disabled to preserve API rate limits
+Cache will be populated on first use
