@@ -520,16 +520,16 @@ async function makeGitHubRequestCustom(url, params = {}, extraHeaders = {}) {
 function ensureLocalRepo() {
   try {
     if (!fs.existsSync(path.join(LOCAL_REPO_PATH, '.git'))) {
-      console.log('⏬ Cloning lf-edge/eve repository locally (this is done once)...');
+      console.log('Cloning lf-edge/eve repository locally (this is done once)...');
       execSync(`git clone --filter=blob:none --quiet https://github.com/${EVE_OS_REPO}.git ${LOCAL_REPO_PATH}`, { stdio: 'inherit' });
-      console.log('✅ Clone complete');
+      console.log('Clone complete');
     } else {
-      console.log('🔄 Fetching latest changes in local repo…');
+      console.log('Fetching latest changes in local repo...');
       execSync('git fetch --all --tags --quiet', { cwd: LOCAL_REPO_PATH, stdio: 'inherit' });
-      console.log('✅ Local repo up to date');
+      console.log('Local repo up to date');
     }
   } catch (err) {
-    console.warn('⚠️  Failed to set up local repo – falling back to GitHub API:', err.message);
+    console.warn('Failed to set up local repo - falling back to GitHub API:', err.message);
   }
 }
 
@@ -658,13 +658,13 @@ async function getTagsContainingCommit(sha) {
   
   // Check cache first
   if (cache.commitTags.has(cacheKey)) {
-    console.log(`💾 Cache hit for commit ${sha.substring(0, 8)}`);
+    console.log(`Cache hit for commit ${sha.substring(0, 8)}`);
     return cache.commitTags.get(cacheKey);
   }
   
   // Prevent duplicate requests for same commit
   if (activeRequests.has(sha)) {
-    console.log(`⏳ Waiting for existing request for commit ${sha.substring(0, 8)}`);
+    console.log(`Waiting for existing request for commit ${sha.substring(0, 8)}`);
     return await activeRequests.get(sha);
   }
   
@@ -682,12 +682,12 @@ async function getTagsContainingCommit(sha) {
 
 async function findTagsForCommit(sha) {
   try {
-    console.log(`🔥 ACCURATE: Finding tags for commit ${sha.substring(0, 8)}...`);
+    console.log(`ACCURATE: Finding tags for commit ${sha.substring(0, 8)}...`);
     const startTime = Date.now();
     
     // Get all tags efficiently (cached after first call)
     const allTags = await getAllTags();
-    console.log(`📊 Checking ${allTags.length} tags with accurate algorithm`);
+    console.log(`Checking ${allTags.length} tags with accurate algorithm`);
     
     const tagsWithCommit = [];
     
@@ -715,7 +715,7 @@ async function findTagsForCommit(sha) {
           const containsCommit = commits.some(commit => commit.sha === sha);
           
           if (containsCommit) {
-            console.log(`✅ FOUND: Tag ${tag.name} contains commit ${sha.substring(0, 8)}`);
+            console.log(`FOUND: Tag ${tag.name} contains commit ${sha.substring(0, 8)}`);
             return {
               name: tag.name,
               commit: tag.commit.sha,
@@ -742,7 +742,7 @@ async function findTagsForCommit(sha) {
             );
             
             if (containsCommit) {
-              console.log(`✅ COMPARE: Tag ${tag.name} contains commit ${sha.substring(0, 8)} (${result.status})`);
+              console.log(`COMPARE: Tag ${tag.name} contains commit ${sha.substring(0, 8)} (${result.status})`);
               return {
                 name: tag.name,
                 commit: tag.commit.sha,
@@ -765,7 +765,7 @@ async function findTagsForCommit(sha) {
       
       // Progress logging every 50 tags
       if (processed % 50 === 0) {
-        console.log(`✅ PROGRESS: ${processed}/${allTags.length} tags checked, found ${tagsWithCommit.length} matches`);
+        console.log(`PROGRESS: ${processed}/${allTags.length} tags checked, found ${tagsWithCommit.length} matches`);
       }
       
       // Shorter delay for speed
@@ -800,14 +800,14 @@ async function findTagsForCommit(sha) {
     });
     
     // Debug: Log all found tags
-    console.log(`🎯 DEBUG: Found tags: ${tagsWithCommit.map(t => t.name).join(', ')}`);
+    console.log(`DEBUG: Found tags: ${tagsWithCommit.map(t => t.name).join(', ')}`);
     
     // Cache result
     cache.commitTags.set(`tags_${sha}`, tagsWithCommit);
     
     const endTime = Date.now();
     const durationSeconds = Math.round((endTime - startTime) / 1000);
-    console.log(`🎉 ACCURATE: Found ${tagsWithCommit.length} tags in ${durationSeconds} seconds`);
+    console.log(`ACCURATE: Found ${tagsWithCommit.length} tags in ${durationSeconds} seconds`);
     
     return tagsWithCommit;
   } catch (error) {
@@ -826,13 +826,13 @@ async function getAllTags() {
   }
   
   try {
-    console.log('🔄 Fetching fresh tag data (this may take a moment)...');
+    console.log('Fetching fresh tag data (this may take a moment)...');
     const allTags = [];
     let page = 1;
     const perPage = 100;
     
     while (true) {
-      console.log(`📥 Fetching tags page ${page}...`);
+      console.log(`Fetching tags page ${page}...`);
       
       const response = await makeGitHubRequest(`${GITHUB_API_BASE}/repos/${EVE_OS_REPO}/tags`, {
         per_page: perPage,
@@ -853,7 +853,7 @@ async function getAllTags() {
     cache.tags = allTags;
     cache.tagsTimestamp = now;
     
-    console.log(`✅ Cached ${allTags.length} tags`);
+    console.log(`Cached ${allTags.length} tags`);
     return allTags;
   } catch (error) {
     console.error('Error fetching tags:', error.message);
@@ -872,7 +872,7 @@ async function getStableBranches() {
   }
   
   try {
-    console.log('🔄 Fetching stable branches...');
+    console.log('Fetching stable branches...');
     const allBranches = [];
     let page = 1;
     const perPage = 100;
@@ -915,7 +915,7 @@ async function getStableBranches() {
     backportCache.stableBranches = stableBranches;
     backportCache.stableBranchesTimestamp = now;
     
-    console.log(`✅ Found ${stableBranches.length} stable branches: ${stableBranches.slice(0, 5).map(b => b.name).join(', ')}${stableBranches.length > 5 ? '...' : ''}`);
+    console.log(`Found ${stableBranches.length} stable branches: ${stableBranches.slice(0, 5).map(b => b.name).join(', ')}${stableBranches.length > 5 ? '...' : ''}`);
     return stableBranches;
   } catch (error) {
     console.error('Error fetching stable branches:', error.message);
@@ -929,12 +929,12 @@ async function findBackportedCommits(originalCommitSha, originalCommitMessage) {
   
   // Check cache first
   if (backportCache.backportedCommits.has(cacheKey)) {
-    console.log(`💾 Cache hit for backported commits of ${originalCommitSha.substring(0, 8)}`);
+    console.log(`Cache hit for backported commits of ${originalCommitSha.substring(0, 8)}`);
     return backportCache.backportedCommits.get(cacheKey);
   }
   
   try {
-    console.log(`🔍 Looking for backported commits of ${originalCommitSha.substring(0, 8)}...`);
+    console.log(`Looking for backported commits of ${originalCommitSha.substring(0, 8)}...`);
 
     // FAST PATH A: PR commit titles matched on stable branches (local git)
     if (fs.existsSync(path.join(LOCAL_REPO_PATH, '.git'))) {
@@ -944,11 +944,11 @@ async function findBackportedCommits(originalCommitSha, originalCommitMessage) {
           const unique = removeDuplicateBackports(prTitleResults);
           unique.sort((a, b) => new Date(b.date) - new Date(a.date));
           backportCache.backportedCommits.set(cacheKey, unique);
-          console.log(`⚡ PR-title scan found ${unique.length} backports for ${originalCommitSha.substring(0, 8)}`);
+          console.log(`PR-title scan found ${unique.length} backports for ${originalCommitSha.substring(0, 8)}`);
           return unique;
         }
       } catch (ptErr) {
-        console.warn('⚠️ PR-title fast scan failed:', ptErr.message);
+        console.warn('PR-title fast scan failed:', ptErr.message);
       }
     }
 
@@ -958,10 +958,10 @@ async function findBackportedCommits(originalCommitSha, originalCommitMessage) {
         const fastResults = await findBackportedCommitsLocal(originalCommitSha, originalCommitMessage);
         // Cache the results
         backportCache.backportedCommits.set(cacheKey, fastResults);
-        console.log(`⚡ Fast local scan found ${fastResults.length} backports for ${originalCommitSha.substring(0, 8)}`);
+        console.log(`Fast local scan found ${fastResults.length} backports for ${originalCommitSha.substring(0, 8)}`);
         return fastResults;
       } catch (localError) {
-        console.warn('⚠️ Fast local backport scan failed, falling back to API search:', localError.message);
+        console.warn('Fast local backport scan failed, falling back to API search:', localError.message);
       }
     }
 
@@ -972,11 +972,11 @@ async function findBackportedCommits(originalCommitSha, originalCommitMessage) {
         const unique = removeDuplicateBackports(prStrategyResults);
         unique.sort((a, b) => new Date(b.date) - new Date(a.date));
         backportCache.backportedCommits.set(cacheKey, unique);
-        console.log(`🧭 PR strategy found ${unique.length} backports for ${originalCommitSha.substring(0, 8)}`);
+        console.log(`PR strategy found ${unique.length} backports for ${originalCommitSha.substring(0, 8)}`);
         return unique;
       }
     } catch (prError) {
-      console.warn('⚠️ PR-based backport strategy failed:', prError.message);
+      console.warn('PR-based backport strategy failed:', prError.message);
     }
 
     // SLOWER FALLBACK: Existing API-based approach
@@ -986,7 +986,7 @@ async function findBackportedCommits(originalCommitSha, originalCommitMessage) {
 
     for (const branch of stableBranches) {
       try {
-        console.log(`🔍 Searching in branch ${branch.name}...`);
+        console.log(`Searching in branch ${branch.name}...`);
 
         const explicitBackports = await findExplicitBackports(originalCommitSha, originalPR, branch.name);
         backportedCommits.push(...explicitBackports);
@@ -999,7 +999,7 @@ async function findBackportedCommits(originalCommitSha, originalCommitMessage) {
 
         await delay(300);
       } catch (error) {
-        console.warn(`⚠️ Failed to search branch ${branch.name}:`, error.message);
+        console.warn(`Failed to search branch ${branch.name}:`, error.message);
         continue;
       }
     }
@@ -1007,7 +1007,7 @@ async function findBackportedCommits(originalCommitSha, originalCommitMessage) {
     const uniqueBackports = removeDuplicateBackports(backportedCommits);
     uniqueBackports.sort((a, b) => new Date(b.date) - new Date(a.date));
     backportCache.backportedCommits.set(cacheKey, uniqueBackports);
-    console.log(`🎉 Found ${uniqueBackports.length} backported commits for ${originalCommitSha.substring(0, 8)}`);
+    console.log(`Found ${uniqueBackports.length} backported commits for ${originalCommitSha.substring(0, 8)}`);
     return uniqueBackports;
   } catch (error) {
     console.error('Error finding backported commits:', error.message);
@@ -1156,9 +1156,9 @@ async function findBackportsViaPRs(originalCommitSha) {
           }
         }
       }
-    } catch (e) {
-      console.warn(`⚠️ PR scan failed for ${branch.name}:`, e.message);
-      continue;
+      } catch (e) {
+        console.warn(`PR scan failed for ${branch.name}:`, e.message);
+        continue;
     }
   }
 
@@ -1279,7 +1279,7 @@ async function findBackportsViaPRTitles(originalCommitSha) {
         titlesSet.add(cleaned);
       }
     } catch (e) {
-      console.warn(`⚠️ Failed to fetch commits for PR #${prNum}:`, e.message);
+      console.warn(`Failed to fetch commits for PR #${prNum}:`, e.message);
     }
   }
 
@@ -1353,7 +1353,7 @@ async function getLocalStableBranches() {
     });
     return names;
   } catch (err) {
-    console.warn('⚠️ Failed to list local branches, aborting local fast path');
+    console.warn('Failed to list local branches, aborting local fast path');
     throw err;
   }
 }
@@ -1692,7 +1692,7 @@ async function getTagsForBackportedCommit(commitSha, branchName) {
           semver: parseSemVer(name)
         }));
       } catch (gitError) {
-        console.warn(`⚠️ Git command failed for ${commitSha}, falling back to API`);
+        console.warn(`Git command failed for ${commitSha}, falling back to API`);
       }
     }
     
@@ -1851,7 +1851,7 @@ async function searchCommits(query, type = 'message', page = 1, perPage = 30) {
 
     // If it looks like a SHA, treat it as a commit ID
     if (query.match(/^[a-f0-9]{7,40}$/i)) {
-      console.log(`🔍 Searching by commit SHA: ${query}`);
+      console.log(`Searching by commit SHA: ${query}`);
       try {
         const response = await makeGitHubRequest(`${GITHUB_API_BASE}/repos/${EVE_OS_REPO}/commits/${query}`);
         return { 
@@ -1869,7 +1869,7 @@ async function searchCommits(query, type = 'message', page = 1, perPage = 30) {
     }
     
     // Otherwise, search by commit message
-    console.log(`🔍 Searching commits by message: "${query}" (page ${page})`);
+    console.log(`Searching commits by message: "${query}" (page ${page})`);
     const response = await makeGitHubRequest(`${GITHUB_API_BASE}/search/commits`, {
       q: `repo:${EVE_OS_REPO} ${query}`,
       sort: 'committer-date',
@@ -1894,7 +1894,7 @@ async function searchCommits(query, type = 'message', page = 1, perPage = 30) {
 // Search for tags by name or pattern
 async function searchTags(query, page = 1, perPage = 30) {
   try {
-    console.log(`🔍 Searching tags by name: "${query}" (page ${page})`);
+    console.log(`Searching tags by name: "${query}" (page ${page})`);
     
     // Get all tags (cached)
     const allTags = await getAllTags();
@@ -2271,8 +2271,8 @@ app.get('/api/debug/compare/:sha/:tagName', async (req, res) => {
 
 // DISABLED: Don't warm up cache on startup to save API calls
 async function warmUpCache() {
-  console.log('🔥 Cache warming disabled to preserve API rate limits');
-  console.log('   Cache will be populated on first use');
+  console.log('Cache warming disabled to preserve API rate limits');
+  console.log('Cache will be populated on first use');
 }
 
 app.listen(PORT, () => {
@@ -2280,10 +2280,10 @@ app.listen(PORT, () => {
   console.log(`Visit http://localhost:${PORT} to use the application`);
   
   if (process.env.GITHUB_TOKEN) {
-    console.log('✅ GitHub token configured - higher rate limits available');
+    console.log('GitHub token configured - higher rate limits available');
   } else {
-    console.log('⚠️  No GitHub token found - limited to 60 requests/hour');
-    console.log('   Add GITHUB_TOKEN to .env file for 5,000 requests/hour');
+    console.log('No GitHub token found - limited to 60 requests/hour');
+    console.log('Add GITHUB_TOKEN to .env file for 5,000 requests/hour');
   }
   
   // Warm up cache in the background

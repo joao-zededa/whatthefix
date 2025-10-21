@@ -159,9 +159,9 @@ async function checkCacheStatus() {
         const status = await response.json();
         
         if (status.tags.cached) {
-            console.log(`✅ Cache ready: ${status.tags.count} tags loaded`);
+            console.log(`Cache ready: ${status.tags.count} tags loaded`);
         } else {
-            console.log('🔄 Cache warming up in background...');
+            console.log('Cache warming up in background...');
         }
     } catch (error) {
         console.warn('Could not check cache status:', error);

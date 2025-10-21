@@ -5,23 +5,23 @@ A powerful web application to search for fixes and commits in the EVE-OS reposit
 ![WhatTheFix](https://img.shields.io/badge/WhatTheFix-blue)
 ![Node.js](https://img.shields.io/badge/Node.js-18+-green)
 
-## 🌟 Features
+## Features
 
-### 🔍 **Advanced Search Capabilities**
+### Advanced Search Capabilities
 - **Smart Search Detection**: Automatically detects commit IDs vs. message searches
 - **Commit Message Search**: Find commits by keywords with pagination support
 - **Commit ID Lookup**: Direct commit lookup using SHA hashes
 - **Pagination**: Load thousands of results with "Load More" functionality
 - **Real-time Search**: Auto-search as you type for message searches
 
-### 🏷️ **Version Analysis**
+### Version Analysis
 - **Tag Analysis**: Find which EVE-OS versions contain any specific commit
 - **LTS Detection**: Identify Long-Term Support versions automatically  
 - **Version Summary**: See Latest and Latest LTS versions at a glance
 - **LTS Filtering**: Toggle to show only LTS versions
 - **Fast Git Integration**: Local repository for instant tag lookup (sub-second performance)
 
-### 🎨 **Modern User Experience**
+### Modern User Experience
 - **Responsive Design**: Perfect on desktop, tablet, and mobile
 - **Beautiful UI**: Gradient themes with smooth animations
 - **Clickable Header**: Click the logo to reset and start fresh
@@ -29,13 +29,13 @@ A powerful web application to search for fixes and commits in the EVE-OS reposit
 - **Interactive Examples**: Click example buttons to try searches instantly
 - **Modal Commit Details**: Rich popup with complete commit information
 
-### ⚡ **Performance & Reliability**
+### Performance & Reliability
 - **Smart Caching**: In-memory caching for faster repeat searches
 - **Rate Limit Management**: Efficient GitHub API usage with token support
 - **Error Recovery**: Graceful handling of network issues and API limits
 - **Local Git Repo**: Clones EVE-OS locally for lightning-fast tag analysis
 
-## 🚀 What's Coming
+## What's Coming
 
 Exciting features in development:
 
@@ -43,7 +43,7 @@ Exciting features in development:
 - **Search History**: Track and revisit your previous searches with saved results
 - **GitHub Token Configuration**: Manage your GitHub authentication directly within your profile
 
-## 📱 Screenshots
+## Screenshots
 ![Homescreen](https://github.com/user-attachments/assets/d01f432e-b9f9-4aac-a14b-2474856accbd)
 ![Search](https://github.com/user-attachments/assets/1003f902-2369-45ce-9e1f-34f8318d697a)
 ![Results](https://github.com/user-attachments/assets/1f211706-fa99-49b9-bc77-856f9c792403)
@@ -55,7 +55,7 @@ The application features a modern interface with:
 - **Version Summary Cards**: Latest, Latest LTS, and Total Tags counters
 - **Professional Tag Display**: Clean badges with LTS highlighting
 
-## 🚀 Installation
+## Installation
 
 ### Prerequisites
 - Node.js 18+ 
@@ -101,7 +101,7 @@ Navigate to `http://localhost:3000`
 
 The first startup will clone the EVE-OS repository locally for fast tag analysis. The application automatically keeps this repository synchronized with the latest changes by performing background updates whenever the local cache expires (every 30 minutes) or when new tags are detected. This ensures you always have access to the most current version information while maintaining lightning-fast search performance. 
 
-## 📖 Usage Guide
+## Usage Guide
 
 ### Basic Searching
 1. **Enter your search term** in the universal search box:
@@ -131,7 +131,7 @@ The first startup will clone the EVE-OS repository locally for fast tag analysis
 - **Scroll down** to automatically load more results
 - **Check the version cards** to understand release status
 
-## 🔧 API Reference
+## API Reference
 
 ### Search Commits with Pagination
 ```http
@@ -206,7 +206,7 @@ GET /api/cache/status     # Check cache status
 POST /api/cache/clear     # Clear all caches
 ```
 
-## 🏗️ Architecture
+## Architecture
 
 ### Backend (Node.js + Express)
 - **server.js**: Main server with API endpoints and GitHub integration
@@ -233,7 +233,7 @@ POST /api/cache/clear     # Clear all caches
 - **Pagination**: Efficient loading of large result sets
 - **Request Optimization**: Batched API calls and intelligent rate limiting
 
-## ⚠️ Rate Limiting & Performance
+## Rate Limiting & Performance
 
 ### GitHub API Limits
 - **Without Token**: 60 requests/hour
@@ -251,7 +251,7 @@ The app automatically clones the EVE-OS repository to `./eve-repo/` for:
 - **Commit Cache**: Persistent for session duration
 - **Smart Updates**: Background repository updates when needed
 
-## 🛠️ Development
+## Development
 
 ### Project Structure
 ```
@@ -277,7 +277,7 @@ whatthefix/
 - **Browser Console**: Monitor frontend operations and API calls
 - **Cache Status**: Visit `/api/cache/status` for cache information
 
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
@@ -292,7 +292,7 @@ whatthefix/
 - **Performance**: Consider rate limits and caching implications
 - **User Experience**: Maintain the clean, intuitive interface
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 
@@ -312,14 +312,14 @@ whatthefix/
 - Verify git is installed and accessible
 
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - **[EVE-OS Project](https://github.com/lf-edge/eve)** - The Linux Foundation Edge virtualization engine
 - **[GitHub API](https://docs.github.com/en/rest)** - Comprehensive repository data access
 - **[Font Awesome](https://fontawesome.com/)** - Beautiful icon library
 - **[Google Fonts](https://fonts.google.com/)** - Inter font family
 
-## 📞 Support
+## Support
 
 For issues, questions, or feature requests:
 
@@ -332,4 +332,4 @@ For issues, questions, or feature requests:
 
 ---
 
-**Happy Bug Hunting!** 🐛🔍 Find those fixes and track them across EVE-OS versions with ease. 
+**Happy Bug Hunting!** Find those fixes and track them across EVE-OS versions with ease. 
