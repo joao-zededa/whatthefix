@@ -59,7 +59,9 @@ When the server boots for the first time it clones the EVE-OS repository into a 
 
 ---
 ## Screenshots
-
+[Homescreen]<img width="2440" height="2706" alt="Homescreen" src="https://github.com/user-attachments/assets/fc300b21-97e0-4ff3-9820-d098dfed30ab" />
+[Search]<img width="2468" height="1532" alt="Search" src="https://github.com/user-attachments/assets/f7042ac3-7faf-4ab3-a138-49fa03b50ea9" />
+[Results]<img width="1864" height="3004" alt="Results" src="https://github.com/user-attachments/assets/17eda231-8fbc-48c6-b1e5-29903a7b4fb3" />
 ---
 
 ## Daily Use Highlights
