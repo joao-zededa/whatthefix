@@ -44,7 +44,7 @@ Exciting features in development:
 - **GitHub Token Configuration**: Manage your GitHub authentication directly within your profile
 
 ## Screenshots
-[Homescreen]<img width="2446" height="2672" alt="CleanShot 2025-10-22 at 16 53 57@2x" src="https://github.com/user-attachments/assets/705826ba-8b1c-4da2-b4d1-58a0cf1d66f2" />
+[Homescreen]<img width="2440" height="2706" alt="CleanShot 2025-10-22 at 16 56 16@2x" src="https://github.com/user-attachments/assets/0830e910-d835-490f-b412-fa8c92cb584c" />
 [Search]<img width="2468" height="1532" alt="CleanShot 2025-10-22 at 16 40 09@2x" src="https://github.com/user-attachments/assets/bdc7fdc9-d547-4748-9b4e-298ec68d6b11" />
 [Results]<img width="1864" height="3004" alt="CleanShot 2025-10-22 at 16 39 46@2x" src="https://github.com/user-attachments/assets/36552ed1-e33c-4fc6-928a-a6c2de87fc82" />
 
