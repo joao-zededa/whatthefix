@@ -101,8 +101,6 @@ Search responses include:
 
 - **Empty results?** Try loosening the query or remove the date phrase; the header shows any active date filter.
 - **GitHub rate limit hit?** Add `GITHUB_TOKEN` to `.env` for 5,000 requests/hour.
-- **Redis connection errors?** Confirm the instance is running and reachable at `REDIS_URL`.
-- **Cloudflare D1 timeouts?** Token storage still works in-session; the log will flag persistence failures without blocking requests.
 
 ---
 
