@@ -10,6 +10,7 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 </head>
 <body>
+  <div class="page-wrap">
     <div class="container">
         <header class="header">
             <div class="header-content">
@@ -100,7 +101,7 @@
                             <li><strong>Commit IDs:</strong> paste a SHA or full GitHub URL to jump straight to that fix or PR.</li>
                             <li><strong>Message keywords:</strong> combine symptoms like <code>panic reboot</code> or components such as <code>pillar</code>.</li>
                             <li><strong>Date filters:</strong> include phrases like <code>"oct 2025"</code> or <code>"oct 13"</code> to narrow results by year, month or day.</li>
-                            <li><strong>OR</strong> put it all together like <code>"rene oct 2025"</code> to search for all commits and PRs from October 2025 by Renê.</li>
+                            <li><strong>OR</strong> put it all together like <code>"rene oct 2025"</code> to filter results for October 2025 by Renê.</li>
                         </ul>
                     </div>
 
@@ -139,9 +140,10 @@
             </div>
         </main>
     </div>
+  </div>
 
-    <!-- Commit Details Modal -->
-    <div id="commitModal" class="modal">
+  <!-- Commit Details Modal -->
+  <div id="commitModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
                 <h2>Commit Details</h2>
@@ -265,4 +267,4 @@
 
     <script src="script.js"></script>
 </body>
-</html> 
+</html>

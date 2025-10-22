@@ -29,16 +29,24 @@ body {
     min-height: 100vh;
 }
 
+.page-wrap {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
 .container {
     max-width: 1200px;
     margin: 0 auto;
     padding: 0 20px;
+    width: 100%;
+    flex: 1 0 auto;
 }
 
 /* Header */
 .header {
     text-align: center;
-    padding: 60px 0 40px;
+    padding: 40px 0 24px;
     color: white;
 }
 
@@ -896,13 +904,13 @@ body.settings-page,
     border-radius: 20px;
     box-shadow: 0 20px 40px rgba(0,0,0,0.3);
     overflow: hidden;
-    margin-bottom: 40px;
+    margin-bottom: 24px;
     border: 1px solid #0D3A58;
 }
 
 /* Search section */
 .search-section {
-    padding: 40px;
+    padding: 30px 40px;
     background: #0D3A58;
     border-bottom: 1px solid #193549;
 }
@@ -916,12 +924,12 @@ body.settings-page,
     display: flex;
     gap: 15px;
     align-items: center;
-    margin-bottom: 20px;
+    margin-bottom: 15px;
 }
 
 .search-input {
     flex: 1;
-    padding: 15px 20px;
+    padding: 12px 18px;
     border: 2px solid #193549;
     border-radius: 12px;
     font-size: 16px;
@@ -957,7 +965,7 @@ body.settings-page,
 }
 
 .search-button {
-    padding: 15px 30px;
+    padding: 12px 26px;
     background: linear-gradient(135deg, #2AFFDF 0%, #9EFFFF 100%);
     color: #15232D;
     border: none;
@@ -1180,7 +1188,7 @@ body.settings-page,
 }
 
 .empty-hero {
-    max-width: 540px;
+    max-width: 900px;
     display: flex;
     flex-direction: column;
     gap: 16px;
