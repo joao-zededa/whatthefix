@@ -96,7 +96,12 @@
                             <i class="fas fa-search"></i>
                         </div>
                         <h3>Find EVE-OS fixes in seconds</h3>
-                        <p>Search by commit ID when you know the exact fix, the PR or use message keywords to explore related work across the repository. If you type a date like "oct 2025" the app will search for all commits and PRs from October 2025. It works with full URLs too -be creative!</p>
+                        <ul class="empty-hints">
+                            <li><strong>Commit IDs:</strong> paste a SHA or full GitHub URL to jump straight to that fix or PR.</li>
+                            <li><strong>Message keywords:</strong> combine symptoms like <code>panic reboot</code> or components such as <code>pillar</code>.</li>
+                            <li><strong>Date filters:</strong> include phrases like <code>"oct 2025"</code> or <code>"oct 13"</code> to narrow results by year, month or day.</li>
+                            <li><strong>OR</strong> put it all together like <code>"rene oct 2025"</code> to search for all commits and PRs from October 2025 by Renê.</li>
+                        </ul>
                     </div>
 
                     <div class="empty-grid">
