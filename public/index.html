@@ -91,17 +91,43 @@
                 </div>
 
                 <div id="emptyState" class="empty-state">
-                    <i class="fas fa-search"></i>
-                    <h3>Search EVE-OS Fixes</h3>
-                    <p>Enter a commit message keyword, commit ID, or the name of the legend who fixed the issue -or all together!</p>
-                    <div class="examples">
-                        <h4>Examples:</h4>
+                    <div class="empty-hero">
+                        <div class="empty-icon">
+                            <i class="fas fa-search"></i>
+                        </div>
+                        <h3>Find EVE-OS fixes in seconds</h3>
+                        <p>Search by commit ID when you know the exact fix, or use message keywords to explore related work across the repository.</p>
+                    </div>
+
+                    <div class="empty-grid">
+                        <div class="empty-card">
+                            <i class="fas fa-hashtag"></i>
+                            <h4>Commit ID</h4>
+                            <p>Paste a full or short SHA hash to jump straight to one commit.</p>
+                            <span class="empty-sample">6e22518</span>
+                        </div>
+                        <div class="empty-card">
+                            <i class="fas fa-keyboard"></i>
+                            <h4>Message keywords</h4>
+                            <p>Mix error strings, components, or symptoms to discover related fixes.</p>
+                            <span class="empty-sample">"memory leak"</span>
+                        </div>
+                        <div class="empty-card">
+                            <i class="fas fa-user-circle"></i>
+                            <h4>Author details</h4>
+                            <p>Include a contributor name or email to see their recent work.</p>
+                            <span class="empty-sample">"pellizzer"</span>
+                        </div>
+                    </div>
+
+                    <div class="empty-suggest">
+                        <span class="empty-suggest-title"><i class="fas fa-lightbulb"></i> Try one of these:</span>
                         <div class="example-tags">
-                            <span class="example-tag" data-example="fix">fix</span>
-                            <span class="example-tag" data-example="security">security</span>
-                            <span class="example-tag" data-example="memory leak">memory leak</span>
-                            <span class="example-tag" data-example="crash">crash</span>
-                            <span class="example-tag" data-example="6e2251880163549c48438e7881fb1c6bac3c83a8">commit ID</span>
+                            <button class="example-tag" type="button" data-example="panic reboot fix">panic reboot fix</button>
+                            <button class="example-tag" type="button" data-example="network regression">network regression</button>
+                            <button class="example-tag" type="button" data-example="container watchdog">container watchdog</button>
+                            <button class="example-tag" type="button" data-example="security patch">security patch</button>
+                            <button class="example-tag" type="button" data-example="2b7021c">2b7021c</button>
                         </div>
                     </div>
                 </div>

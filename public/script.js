@@ -52,6 +52,8 @@ function initializeEventListeners() {
 
     // Auto-search as user types
     searchInput.addEventListener('input', function() {
+        this.classList.remove('search-input-highlight');
+        this.removeAttribute('aria-invalid');
         const query = this.value.trim();
         
         // Clear previous timeout
@@ -319,7 +321,7 @@ async function performSearch(isNewSearch = true) {
         query = searchInput.value.trim();
         
         if (!query) {
-            showSearchHint();
+            highlightSearchInput();
             return;
         }
 
@@ -418,6 +420,17 @@ function hideAllStates() {
     errorMessage.classList.add('hidden');
     resultsContainer.classList.add('hidden');
     emptyState.classList.add('hidden');
+}
+
+function highlightSearchInput() {
+    if (!searchInput) return;
+    searchInput.focus({ preventScroll: true });
+    searchInput.classList.add('search-input-highlight');
+    searchInput.setAttribute('aria-invalid', 'true');
+    setTimeout(() => {
+        searchInput.classList.remove('search-input-highlight');
+        searchInput.removeAttribute('aria-invalid');
+    }, 1600);
 }
 
 function displayResults(data, searchType) {
@@ -894,10 +907,8 @@ function goHome() {
     searchInput.value = '';
     searchInput.style.fontFamily = '';
     searchInput.style.backgroundColor = '';
-    
-    // Remove any hint messages
-    const existingHints = document.querySelectorAll('.search-hint-message');
-    existingHints.forEach(hint => hint.remove());
+    searchInput.classList.remove('search-input-highlight');
+    searchInput.removeAttribute('aria-invalid');
     
     // Hide modal if open
     hideModal();
@@ -924,6 +935,8 @@ function clearSearch() {
     searchInput.value = '';
     searchInput.style.fontFamily = '';
     searchInput.style.backgroundColor = '';
+    searchInput.classList.remove('search-input-highlight');
+    searchInput.removeAttribute('aria-invalid');
     clearResults();
     searchInput.focus();
 }
@@ -1263,108 +1276,6 @@ window.onclick = function(event) {
     }
 }
 
-function showSearchHint() {
-    hideAllStates();
-    
-    // Remove any existing hint messages first
-    const existingHints = document.querySelectorAll('.search-hint-message');
-    existingHints.forEach(hint => hint.remove());
-    
-    // Create an elegant hint message
-    const hintElement = document.createElement('div');
-    hintElement.className = 'search-hint-message';
-    hintElement.innerHTML = `
-        <div class="hint-header">
-            <div class="hint-icon">
-                <i class="fas fa-search"></i>
-            </div>
-            <div class="hint-title">
-                <h3>Ready to Search</h3>
-                <p class="hint-subtitle">Find commits and track fixes across EVE-OS versions</p>
-            </div>
-            <button class="hint-close" onclick="closeSearchHint()">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
-        <div class="hint-body">
-            <div class="hint-section">
-                <div class="hint-option">
-                    <div class="option-icon">
-                        <i class="fas fa-code-branch"></i>
-                    </div>
-                    <div class="option-content">
-                        <strong>Search by Commit ID</strong>
-                        <span>Enter full or partial SHA hash</span>
-                        <code class="option-example">2b7201c</code>
-                    </div>
-                </div>
-                <div class="hint-option">
-                    <div class="option-icon">
-                        <i class="fas fa-comment-dots"></i>
-                    </div>
-                    <div class="option-content">
-                        <strong>Search by Keywords</strong>
-                        <span>Find commits by message content</span>
-                        <code class="option-example">fix memory leak</code>
-                    </div>
-                </div>
-            </div>
-            <div class="hint-examples">
-                <div class="examples-header">
-                    <i class="fas fa-play-circle"></i>
-                    <span>Quick Start Examples</span>
-                </div>
-                <div class="example-buttons">
-                    <button class="example-btn" onclick="fillExample('f63bb927d74c8e6fb04e470a6969c926aaa3f5cd')">
-                        <i class="fas fa-hashtag"></i>
-                        Sample Commit
-                    </button>
-                    <button class="example-btn" onclick="fillExample('fix crash')">
-                        <i class="fas fa-bug"></i>
-                        Fix Crash
-                    </button>
-                    <button class="example-btn" onclick="fillExample('pillar')">
-                        <i class="fas fa-cogs"></i>
-                        Pillar
-                    </button>
-                    <button class="example-btn" onclick="fillExample('security')">
-                        <i class="fas fa-shield-alt"></i>
-                        Security
-                    </button>
-                </div>
-            </div>
-        </div>
-    `;
-    
-    // Insert after the search section
-    const searchSection = document.querySelector('.search-section');
-    searchSection.appendChild(hintElement);
-    
-    // Focus the search input
-    searchInput.focus();
-    
-    // No automatic removal - hint stays until user takes action
-}
-
-function closeSearchHint() {
-    const hintElement = document.querySelector('.search-hint-message');
-    if (hintElement) {
-        hintElement.style.animation = 'slideOutToTop 0.3s ease-in';
-        setTimeout(() => {
-            if (hintElement.parentNode) {
-                hintElement.remove();
-            }
-        }, 300);
-    }
-}
-
-function fillExample(example) {
-    searchInput.value = example;
-    // Remove any existing hints
-    const existingHints = document.querySelectorAll('.search-hint-message');
-    existingHints.forEach(hint => hint.remove());
-    performSearch();
-}
 
 // Filter tags based on search query
 function filterTags(query) {
