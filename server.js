@@ -13,6 +13,9 @@ const os = require('os');
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
 const session = require('express-session');
+const crypto = require('crypto');
+const RedisStore = require('connect-redis').default;
+const { createClient } = require('redis');
 // Lazy load openid-client v6 API
 let discovery, randomState, randomNonce, randomPKCECodeVerifier, calculatePKCECodeChallenge, buildAuthorizationUrl, buildEndSessionUrl, authorizationCodeGrant;
 async function getOpenIdClient() {
@@ -40,6 +43,261 @@ async function getOpenIdClient() {
 const { createRemoteJWKSet, jwtVerify, decodeJwt } = require('jose');
 const { v4: uuidv4 } = require('uuid');
 
+function sanitizeTableName(name) {
+  const sanitized = (name || '').replace(/[^\w]/g, '_');
+  return sanitized || 'user_tokens';
+}
+
+const TOKEN_ENCRYPTION_KEY = process.env.TOKEN_ENCRYPTION_KEY;
+if (!TOKEN_ENCRYPTION_KEY) {
+  throw new Error('TOKEN_ENCRYPTION_KEY environment variable is required to encrypt sensitive tokens.');
+}
+
+let cachedEncryptionKey = null;
+function resolveEncryptionKey() {
+  if (cachedEncryptionKey) return cachedEncryptionKey;
+  const raw = TOKEN_ENCRYPTION_KEY.trim();
+  let keyBuffer = null;
+  try {
+    const base64Attempt = Buffer.from(raw, 'base64');
+    if (base64Attempt.length === 32) {
+      keyBuffer = base64Attempt;
+    }
+  } catch {
+    keyBuffer = null;
+  }
+  if (!keyBuffer && /^[0-9a-fA-F]+$/.test(raw) && raw.length === 64) {
+    keyBuffer = Buffer.from(raw, 'hex');
+  }
+  if (!keyBuffer) {
+    keyBuffer = crypto.createHash('sha256').update(raw, 'utf8').digest();
+  }
+  cachedEncryptionKey = keyBuffer;
+  return cachedEncryptionKey;
+}
+
+function encryptSensitivePayload(payload) {
+  const key = resolveEncryptionKey();
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const serialized = JSON.stringify(payload);
+  const encrypted = Buffer.concat([cipher.update(serialized, 'utf8'), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  return Buffer.concat([iv, authTag, encrypted]).toString('base64');
+}
+
+function decryptSensitivePayload(serialized) {
+  if (!serialized) return null;
+  const key = resolveEncryptionKey();
+  const buffer = Buffer.from(serialized, 'base64');
+  if (buffer.length < 28) {
+    throw new Error('Invalid encrypted payload length');
+  }
+  const iv = buffer.subarray(0, 12);
+  const authTag = buffer.subarray(12, 28);
+  const ciphertext = buffer.subarray(28);
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+  decipher.setAuthTag(authTag);
+  const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
+  return JSON.parse(decrypted);
+}
+
+function maskToken(token) {
+  if (!token || token.length < 12) return token || null;
+  return `${token.slice(0, 8)}...${token.slice(-4)}`;
+}
+
+const CLOUDFLARE_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
+const CLOUDFLARE_D1_DATABASE_ID = process.env.CLOUDFLARE_D1_DATABASE_ID;
+const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
+const CLOUDFLARE_D1_TOKEN_TABLE = sanitizeTableName(process.env.CLOUDFLARE_D1_TOKEN_TABLE || 'user_tokens');
+
+const CLOUDFLARE_D1_ENDPOINT = CLOUDFLARE_ACCOUNT_ID && CLOUDFLARE_D1_DATABASE_ID
+  ? `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${CLOUDFLARE_D1_DATABASE_ID}/query`
+  : null;
+
+const isCloudflareConfigured = Boolean(CLOUDFLARE_ACCOUNT_ID && CLOUDFLARE_D1_DATABASE_ID && CLOUDFLARE_API_TOKEN);
+let cloudflareWarnedMissing = false;
+let ensureTokenTablePromise = null;
+
+async function executeCloudflareQuery(sql, params = []) {
+  if (!isCloudflareConfigured) {
+    if (!cloudflareWarnedMissing) {
+      console.warn('Cloudflare D1 credentials missing; tokens will not be persisted to Cloudflare.');
+      cloudflareWarnedMissing = true;
+    }
+    return null;
+  }
+
+  try {
+    const response = await axios.post(CLOUDFLARE_D1_ENDPOINT, {
+      sql: [{ sql, params }]
+    }, {
+      headers: {
+        'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    const data = response.data || {};
+    if (data.success === false) {
+      const message = (data.errors || []).map(e => e.message).join('; ') || 'Unknown Cloudflare D1 error';
+      throw new Error(message);
+    }
+    const resultEntry = Array.isArray(data.result) ? data.result[0] : null;
+    if (resultEntry && resultEntry.success === false) {
+      const message = (resultEntry.errors || []).map(e => e.message).join('; ') || 'Unknown Cloudflare D1 error';
+      throw new Error(message);
+    }
+    return resultEntry;
+  } catch (error) {
+    const reason = error.response?.data || error.message || error;
+    console.error('Cloudflare D1 query failed:', reason);
+    throw error;
+  }
+}
+
+async function ensureTokenTable() {
+  if (!isCloudflareConfigured) return;
+  if (!ensureTokenTablePromise) {
+    const createSql = `CREATE TABLE IF NOT EXISTS ${CLOUDFLARE_D1_TOKEN_TABLE} (
+      user_id TEXT NOT NULL,
+      token_type TEXT NOT NULL,
+      encrypted_payload TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, token_type)
+    )`;
+    ensureTokenTablePromise = executeCloudflareQuery(createSql).catch(err => {
+      ensureTokenTablePromise = null;
+      throw err;
+    });
+  }
+  return ensureTokenTablePromise;
+}
+
+async function persistEncryptedToken(userId, tokenType, encryptedPayload) {
+  if (!userId || !tokenType || !encryptedPayload) return;
+  if (!isCloudflareConfigured) return;
+  try {
+    await ensureTokenTable();
+    const sql = `INSERT INTO ${CLOUDFLARE_D1_TOKEN_TABLE} (user_id, token_type, encrypted_payload, created_at, updated_at)
+      VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ON CONFLICT(user_id, token_type)
+      DO UPDATE SET encrypted_payload = excluded.encrypted_payload, updated_at = CURRENT_TIMESTAMP`;
+    await executeCloudflareQuery(sql, [userId, tokenType, encryptedPayload]);
+  } catch (error) {
+    console.error('Failed to persist token to Cloudflare D1:', error.message || error);
+  }
+}
+
+async function readEncryptedToken(userId, tokenType) {
+  if (!userId || !tokenType) return null;
+  if (!isCloudflareConfigured) return null;
+  try {
+    await ensureTokenTable();
+    const sql = `SELECT encrypted_payload FROM ${CLOUDFLARE_D1_TOKEN_TABLE} WHERE user_id = ? AND token_type = ? LIMIT 1`;
+    const resultEntry = await executeCloudflareQuery(sql, [userId, tokenType]);
+    const rows = resultEntry?.results || [];
+    if (!rows.length) return null;
+    return rows[0]?.encrypted_payload || null;
+  } catch (error) {
+    console.error('Failed to read token from Cloudflare D1:', error.message || error);
+    return null;
+  }
+}
+
+async function deleteEncryptedToken(userId, tokenType) {
+  if (!userId || !tokenType) return;
+  if (!isCloudflareConfigured) return;
+  try {
+    await ensureTokenTable();
+    const sql = `DELETE FROM ${CLOUDFLARE_D1_TOKEN_TABLE} WHERE user_id = ? AND token_type = ?`;
+    await executeCloudflareQuery(sql, [userId, tokenType]);
+  } catch (error) {
+    console.error('Failed to delete token from Cloudflare D1:', error.message || error);
+  }
+}
+
+function setSessionTokenBundle(req, payload) {
+  if (!req?.session) return null;
+  const encrypted = encryptSensitivePayload(payload);
+  req.session.tokens = encrypted;
+  return encrypted;
+}
+
+async function getSessionTokenBundle(req) {
+  if (!req?.session) return null;
+  const encrypted = req.session.tokens;
+  if (encrypted) {
+    try {
+      return decryptSensitivePayload(encrypted);
+    } catch (error) {
+      console.error('Failed to decrypt session token bundle:', error.message || error);
+      return null;
+    }
+  }
+  if (!req.session.user?.id) return null;
+  const stored = await readEncryptedToken(req.session.user.id, 'oidc_refresh');
+  if (!stored) return null;
+  req.session.tokens = stored;
+  try {
+    return decryptSensitivePayload(stored);
+  } catch (error) {
+    console.error('Failed to decrypt persisted token bundle:', error.message || error);
+    return null;
+  }
+}
+
+function clearSessionTokenBundle(req) {
+  if (req?.session?.tokens) {
+    delete req.session.tokens;
+  }
+}
+
+async function saveGithubToken(req, token) {
+  if (!req?.session?.user?.id) return;
+  const encrypted = encryptSensitivePayload({ token });
+  req.session.user.githubToken = encrypted;
+  await persistEncryptedToken(req.session.user.id, 'github_pat', encrypted);
+}
+
+async function loadGithubToken(req) {
+  if (!req?.session?.user?.id) return null;
+  let encrypted = req.session.user.githubToken;
+  if (!encrypted) {
+    encrypted = await readEncryptedToken(req.session.user.id, 'github_pat');
+    if (encrypted) {
+      req.session.user.githubToken = encrypted;
+    }
+  }
+  if (!encrypted) return null;
+  try {
+    const payload = decryptSensitivePayload(encrypted);
+    return payload?.token || null;
+  } catch (error) {
+    console.error('Failed to decrypt GitHub token:', error.message || error);
+    return null;
+  }
+}
+
+async function removeGithubToken(req) {
+  if (!req?.session?.user?.id) return;
+  delete req.session.user.githubToken;
+  await deleteEncryptedToken(req.session.user.id, 'github_pat');
+}
+
+async function destroySession(req) {
+  if (!req?.session) return;
+  await new Promise(resolve => {
+    req.session.destroy(err => {
+      if (err) {
+        console.error('Failed to destroy session:', err);
+      }
+      resolve();
+    });
+  });
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -63,6 +321,44 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 
+const REDIS_URL = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
+const REDIS_USE_TLS = (process.env.REDIS_USE_TLS || 'false').toLowerCase() === 'true';
+const redisClientOptions = { url: REDIS_URL };
+if (REDIS_USE_TLS) {
+  redisClientOptions.socket = { tls: true };
+}
+const redisClient = createClient(redisClientOptions);
+redisClient.on('error', err => {
+  console.error('Redis client error:', err);
+});
+redisClient.connect().catch(err => {
+  console.error('Failed to connect to Redis:', err);
+});
+const sessionStore = new RedisStore({
+  client: redisClient,
+  prefix: process.env.REDIS_SESSION_PREFIX || 'sess:'
+});
+
+async function gracefulRedisShutdown() {
+  try {
+    if (redisClient.isOpen) {
+      await redisClient.quit();
+    }
+  } catch (error) {
+    console.error('Error during Redis shutdown:', error);
+  }
+}
+
+process.on('SIGINT', async () => {
+  await gracefulRedisShutdown();
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  await gracefulRedisShutdown();
+  process.exit(0);
+});
+
 // Session configuration
 const SESSION_SECRET = process.env.SESSION_SECRET || 'change-me-in-production';
 const SECURE_COOKIES = (process.env.SECURE_COOKIES || 'false').toLowerCase() === 'true';
@@ -71,6 +367,7 @@ app.use(session({
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
+  store: sessionStore,
   cookie: {
     httpOnly: true,
     secure: SECURE_COOKIES,
@@ -253,10 +550,12 @@ app.get(OIDC_REDIRECT_PATH, async (req, res) => {
       roles,
       idToken: tokenSet.id_token // kept temporarily for logout; not sent to client
     };
-    req.session.tokens = {
+    const tokenBundle = {
       refresh_token: tokenSet.refresh_token || null,
       expires_at: tokenSet.expires_at || null
     };
+    const encryptedTokens = setSessionTokenBundle(req, tokenBundle);
+    await persistEncryptedToken(req.session.user.id, 'oidc_refresh', encryptedTokens);
     delete req.session.oidc;
     return res.redirect('/');
   } catch (e) {
@@ -276,16 +575,22 @@ app.get('/auth/me', (req, res) => {
 app.post('/auth/refresh', async (req, res) => {
   try {
     const client = await ensureOidcClient();
-    if (!req.session || !req.session.tokens || !req.session.tokens.refresh_token) {
+    if (!req.session || !req.session.user?.id) {
       return res.status(400).json({ error: 'No refresh token' });
     }
-    const tokenSet = await client.refresh(req.session.tokens.refresh_token);
+    const tokenBundle = await getSessionTokenBundle(req);
+    if (!tokenBundle || !tokenBundle.refresh_token) {
+      return res.status(400).json({ error: 'No refresh token' });
+    }
+    const tokenSet = await client.refresh(tokenBundle.refresh_token);
     // Rotation: replace refresh token if provided
     if (tokenSet.refresh_token) {
-      req.session.tokens.refresh_token = tokenSet.refresh_token;
+      tokenBundle.refresh_token = tokenSet.refresh_token;
     }
-    req.session.tokens.expires_at = tokenSet.expires_at || null;
-    return res.json({ success: true, expires_at: req.session.tokens.expires_at });
+    tokenBundle.expires_at = tokenSet.expires_at || null;
+    const encryptedTokens = setSessionTokenBundle(req, tokenBundle);
+    await persistEncryptedToken(req.session.user.id, 'oidc_refresh', encryptedTokens);
+    return res.json({ success: true, expires_at: tokenBundle.expires_at || null });
   } catch (e) {
     return res.status(401).json({ error: 'Refresh failed', message: e.message });
   }
@@ -293,19 +598,38 @@ app.post('/auth/refresh', async (req, res) => {
 
 app.get('/auth/logout', async (req, res) => {
   try {
-    const idTokenHint = req.session?.user?.idToken;
-    if (idTokenHint) {
-      const client = await ensureOidcClient();
-      const endUrl = client.endSessionUrl({ 
-        id_token_hint: idTokenHint, 
-        post_logout_redirect_uri: POST_LOGOUT_REDIRECT_URI, 
-        state: uuidv4() 
-      });
-      req.session.destroy(() => {});
-      return res.redirect(endUrl);
+    const userId = req.session?.user?.id;
+    if (userId) {
+      await Promise.all([
+        deleteEncryptedToken(userId, 'oidc_refresh'),
+        deleteEncryptedToken(userId, 'github_pat')
+      ]);
     }
-    req.session.destroy(() => {});
-    return res.redirect(POST_LOGOUT_REDIRECT_URI);
+    clearSessionTokenBundle(req);
+    if (req.session?.user?.githubToken) {
+      delete req.session.user.githubToken;
+    }
+    const idTokenHint = req.session?.user?.idToken;
+    let redirectUrl = POST_LOGOUT_REDIRECT_URI;
+    if (idTokenHint) {
+      try {
+        const client = await ensureOidcClient();
+        redirectUrl = client.endSessionUrl({ 
+          id_token_hint: idTokenHint, 
+          post_logout_redirect_uri: POST_LOGOUT_REDIRECT_URI, 
+          state: uuidv4() 
+        });
+      } catch (error) {
+        console.error('Failed to build end session URL:', error);
+      }
+    }
+    await destroySession(req);
+    res.clearCookie('sid', {
+      httpOnly: true,
+      secure: SECURE_COOKIES,
+      sameSite: SECURE_COOKIES ? 'none' : 'lax'
+    });
+    return res.redirect(redirectUrl);
   } catch (e) {
     return res.redirect(POST_LOGOUT_REDIRECT_URI);
   }
@@ -1935,7 +2259,7 @@ app.get('/api/search/commits', async (req, res) => {
     const perPageNum = Math.min(parseInt(per_page) || 30, 100); // Max 100 per page
     
     // Get user token if available
-    const userToken = req.session?.user?.githubToken;
+    const userToken = await loadGithubToken(req);
     
     const searchResult = await searchCommits(query, type, pageNum, perPageNum, userToken);
     
@@ -2181,17 +2505,14 @@ app.get('/settings/account', ensureAuthenticated, (req, res) => {
 
 // -------- Settings API endpoints --------
 // Get user's GitHub token
-app.get('/api/settings/github-token', ensureAuthenticated, (req, res) => {
+app.get('/api/settings/github-token', ensureAuthenticated, async (req, res) => {
   try {
-    const userId = req.session.user.id;
-    const token = req.session.user.githubToken || null;
-    
-    // Return masked token for security
-    const maskedToken = token ? token.substring(0, 8) + '...' + token.substring(token.length - 4) : null;
+    const token = await loadGithubToken(req);
+    const maskedToken = maskToken(token);
     
     res.json({ 
       hasToken: !!token,
-      token: token, // Send full token for editing (it's already in session)
+      token,
       maskedToken 
     });
   } catch (error) {
@@ -2204,7 +2525,6 @@ app.get('/api/settings/github-token', ensureAuthenticated, (req, res) => {
 app.post('/api/settings/github-token', ensureAuthenticated, async (req, res) => {
   try {
     const { token } = req.body;
-    const userId = req.session.user.id;
     
     if (!token || typeof token !== 'string') {
       return res.status(400).json({ error: 'Token is required' });
@@ -2234,13 +2554,12 @@ app.post('/api/settings/github-token', ensureAuthenticated, async (req, res) => 
       return res.status(400).json({ error: 'Invalid or expired GitHub token' });
     }
     
-    // Store token in session (in production, you'd want to encrypt and store in database)
-    req.session.user.githubToken = token;
+    await saveGithubToken(req, token);
     
     res.json({ 
       success: true, 
       message: 'GitHub token saved successfully',
-      maskedToken: token.substring(0, 8) + '...' + token.substring(token.length - 4)
+      maskedToken: maskToken(token)
     });
     
   } catch (error) {
@@ -2250,12 +2569,9 @@ app.post('/api/settings/github-token', ensureAuthenticated, async (req, res) => 
 });
 
 // Delete user's GitHub token
-app.delete('/api/settings/github-token', ensureAuthenticated, (req, res) => {
+app.delete('/api/settings/github-token', ensureAuthenticated, async (req, res) => {
   try {
-    const userId = req.session.user.id;
-    
-    // Remove token from session
-    delete req.session.user.githubToken;
+    await removeGithubToken(req);
     
     res.json({ 
       success: true, 

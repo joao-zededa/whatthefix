@@ -146,12 +146,8 @@ function initializeEventListeners() {
     const loginBtn = document.getElementById('loginBtn');
     const logoutBtn = document.getElementById('logoutBtn');
     if (loginBtn) loginBtn.addEventListener('click', () => window.location.href = '/login');
-    if (logoutBtn) logoutBtn.addEventListener('click', async () => {
-        try {
-            await fetch('/auth/logout', { credentials: 'include' });
-        } finally {
-            window.location.reload();
-        }
+    if (logoutBtn) logoutBtn.addEventListener('click', () => {
+        window.location.href = '/auth/logout';
     });
 }
 

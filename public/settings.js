@@ -215,3 +215,4 @@ function showStatus(message, type) {
 function goHome() {
     window.location.href = '/';
 }
+
