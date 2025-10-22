@@ -14,6 +14,10 @@ const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
 const session = require('express-session');
 const crypto = require('crypto');
+
+if (!globalThis.crypto) {
+  globalThis.crypto = crypto.webcrypto;
+}
 const RedisStore = require('connect-redis').default;
 const { createClient } = require('redis');
 // Lazy load openid-client v6 API
