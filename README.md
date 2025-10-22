@@ -58,6 +58,9 @@ CORS_ORIGIN=http://localhost:3000
 When the server boots for the first time it clones the EVE-OS repository into a cache directory so tag lookups are instant. Background jobs keep that clone fresh.
 
 ---
+## Screenshots
+
+---
 
 ## Daily Use Highlights
 
