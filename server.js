@@ -107,6 +107,126 @@ function maskToken(token) {
   return `${token.slice(0, 8)}...${token.slice(-4)}`;
 }
 
+const MONTH_KEYWORDS = {
+  jan: 1, january: 1,
+  feb: 2, february: 2,
+  mar: 3, march: 3,
+  apr: 4, april: 4,
+  may: 5,
+  jun: 6, june: 6,
+  jul: 7, july: 7,
+  aug: 8, august: 8,
+  sep: 9, sept: 9, september: 9,
+  oct: 10, october: 10,
+  nov: 11, november: 11,
+  dec: 12, december: 12
+};
+
+function formatDateForQuery(date) {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function extractDateFilters(rawQuery = '') {
+  const tokens = rawQuery.split(/\s+/).filter(Boolean);
+  const remainingTokens = [];
+  let year = null;
+  let month = null;
+  let day = null;
+  let capturedDayToken = null;
+
+  for (const token of tokens) {
+    const trimmed = token.trim();
+    let normalized = trimmed.toLowerCase();
+    normalized = normalized.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    normalized = normalized.replace(/[^a-z0-9]/g, '');
+
+    if (!normalized) {
+      remainingTokens.push(token);
+      continue;
+    }
+
+    if (!year && /^\d{4}$/.test(normalized)) {
+      const parsedYear = parseInt(normalized, 10);
+      if (parsedYear >= 1970 && parsedYear <= 2100) {
+        year = parsedYear;
+        continue;
+      }
+    }
+
+    if (!month) {
+      let monthValue = MONTH_KEYWORDS[normalized];
+      if (!monthValue && normalized.length > 3) {
+        monthValue = MONTH_KEYWORDS[normalized.slice(0, 3)];
+      }
+      if (monthValue) {
+        month = monthValue;
+        continue;
+      }
+    }
+
+    if (month && !day) {
+      const dayMatch = normalized.match(/^(\d{1,2})(st|nd|rd|th)?$/);
+      if (dayMatch) {
+        const parsedDay = parseInt(dayMatch[1], 10);
+        if (parsedDay >= 1 && parsedDay <= 31) {
+          day = parsedDay;
+          capturedDayToken = token;
+          continue;
+        }
+      }
+    }
+
+    remainingTokens.push(token);
+  }
+
+  if (!month && day !== null) {
+    remainingTokens.push(capturedDayToken || String(day));
+    day = null;
+  }
+
+  let fromDate = null;
+  let toDate = null;
+  let applied = null;
+
+  if (year || month) {
+    const effectiveYear = year || (new Date()).getFullYear();
+
+    if (month && day) {
+      fromDate = new Date(Date.UTC(effectiveYear, month - 1, day));
+      toDate = new Date(Date.UTC(effectiveYear, month - 1, day));
+    } else if (month) {
+      fromDate = new Date(Date.UTC(effectiveYear, month - 1, 1));
+      toDate = new Date(Date.UTC(effectiveYear, month, 0));
+    } else if (year) {
+      fromDate = new Date(Date.UTC(effectiveYear, 0, 1));
+      toDate = new Date(Date.UTC(effectiveYear, 11, 31));
+    }
+
+    applied = {
+      year: effectiveYear,
+      month: month || null,
+      day: day || null,
+      assumedCurrentYear: Boolean(!year && month)
+    };
+  }
+
+  let dateRange = null;
+  if (fromDate && toDate) {
+    dateRange = `${formatDateForQuery(fromDate)}..${formatDateForQuery(toDate)}`;
+  }
+
+  return {
+    cleanedQuery: remainingTokens.join(' ').trim(),
+    appliedFilters: applied,
+    fromDate,
+    toDate,
+    dateRange
+  };
+}
+
 const CLOUDFLARE_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
 const CLOUDFLARE_D1_DATABASE_ID = process.env.CLOUDFLARE_D1_DATABASE_ID;
 const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
@@ -2092,6 +2212,9 @@ async function getCommitDetails(sha) {
 // Search for commits by message or get commit by SHA
 async function searchCommits(query, type = 'message', page = 1, perPage = 30, userToken = null) {
   try {
+    const searchMode = (type || 'message').toLowerCase();
+    const originalQuery = query || '';
+
     // If query is a GitHub URL, resolve it to commits first (PR or commit URL)
     const ghUrlMatch = (query || '').match(/^https?:\/\/github\.com\/([^\/]+)\/([^\/]+)\/(pull\/(\d+)|commit\/([0-9a-fA-F]{7,40}))/i);
     if (ghUrlMatch) {
@@ -2116,8 +2239,12 @@ async function searchCommits(query, type = 'message', page = 1, perPage = 30, us
         return {
           items: formatted,
           total_count: formatted.length,
+          filtered_total: formatted.length,
           incomplete_results: false,
-          has_more: false
+          has_more: false,
+          applied_filters: null,
+          search_terms: query,
+          original_query: query
         };
       }
 
@@ -2127,8 +2254,12 @@ async function searchCommits(query, type = 'message', page = 1, perPage = 30, us
         return {
           items: [response.data],
           total_count: 1,
+          filtered_total: 1,
           incomplete_results: false,
-          has_more: false
+          has_more: false,
+          applied_filters: null,
+          search_terms: query,
+          original_query: query
         };
       }
     }
@@ -2141,21 +2272,47 @@ async function searchCommits(query, type = 'message', page = 1, perPage = 30, us
         return { 
           items: [response.data], 
           total_count: 1, 
+          filtered_total: 1,
           incomplete_results: false,
-          has_more: false
+          has_more: false,
+          applied_filters: null,
+          search_terms: query,
+          original_query: query
         };
       } catch (error) {
         if (error.response && error.response.status === 404) {
-          return { items: [], total_count: 0, incomplete_results: false, has_more: false };
+          return { items: [], total_count: 0, filtered_total: 0, incomplete_results: false, has_more: false, applied_filters: null, search_terms: query, original_query: query };
         }
         throw error;
       }
     }
     
     // Otherwise, search by commit message
-    console.log(`Searching commits by message: "${query}" (page ${page})`);
+    let parsedFilters = {
+      cleanedQuery: originalQuery,
+      appliedFilters: null,
+      fromDate: null,
+      toDate: null,
+      dateRange: null
+    };
+
+    if (searchMode === 'message') {
+      parsedFilters = extractDateFilters(originalQuery);
+    }
+
+    const textQuery = parsedFilters.cleanedQuery || '';
+    console.log(`Searching commits by message: "${textQuery || '(no text)'}"${parsedFilters.dateRange ? ` with date range ${parsedFilters.dateRange}` : ''} (page ${page})`);
+
+    let githubQuery = `repo:${EVE_OS_REPO}`;
+    if (textQuery) {
+      githubQuery += ` ${textQuery}`;
+    }
+    if (parsedFilters.dateRange) {
+      githubQuery += ` committer-date:${parsedFilters.dateRange}`;
+    }
+
     const response = await makeGitHubRequest(`${GITHUB_API_BASE}/search/commits`, {
-      q: `repo:${EVE_OS_REPO} ${query}`,
+      q: githubQuery,
       sort: 'committer-date',
       order: 'desc',
       per_page: perPage,
@@ -2163,11 +2320,31 @@ async function searchCommits(query, type = 'message', page = 1, perPage = 30, us
     }, userToken);
     
     const data = response.data;
+    let items = data.items || [];
+
+    if (parsedFilters.fromDate && parsedFilters.toDate) {
+      const startTime = parsedFilters.fromDate.getTime();
+      const endTimeExclusive = parsedFilters.toDate.getTime() + (24 * 60 * 60 * 1000);
+      items = items.filter(item => {
+        const dateStr = item.commit?.author?.date || item.commit?.committer?.date;
+        if (!dateStr) return false;
+        const commitTime = new Date(dateStr).getTime();
+        return Number.isFinite(commitTime) && commitTime >= startTime && commitTime < endTimeExclusive;
+      });
+    }
+
+    const githubTotalCount = data.total_count || 0;
+    const hasMore = (page * perPage) < (githubTotalCount || 0);
+
     return {
-      items: data.items || [],
-      total_count: data.total_count || 0,
+      items,
+      total_count: githubTotalCount,
+      filtered_total: items.length,
       incomplete_results: data.incomplete_results || false,
-      has_more: (page * perPage) < (data.total_count || 0)
+      has_more: hasMore,
+      applied_filters: parsedFilters.appliedFilters,
+      search_terms: textQuery,
+      original_query: originalQuery
     };
   } catch (error) {
     console.error('Error searching commits:', error.message);
@@ -2280,8 +2457,12 @@ app.get('/api/search/commits', async (req, res) => {
       per_page: perPageNum,
       count: formattedCommits.length,
       total_count: searchResult.total_count,
+      filtered_total: searchResult.filtered_total,
       has_more: searchResult.has_more,
       incomplete_results: searchResult.incomplete_results,
+      search_terms: searchResult.search_terms,
+      applied_filters: searchResult.applied_filters,
+      original_query: searchResult.original_query || query,
       commits: formattedCommits
     });
   } catch (error) {

@@ -11,6 +11,11 @@ let allLoadedTags = []; // Store all loaded tags for search functionality
 let currentCommitSha = '';
 let currentBackportData = null;
 
+const MONTH_NAMES = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+];
+
 // DOM elements - Fixed to match actual HTML structure
 const searchInput = document.getElementById('searchInput');
 const searchButton = document.getElementById('searchButton');
@@ -436,7 +441,9 @@ function highlightSearchInput() {
 function displayResults(data, searchType) {
     if (data.commits.length === 0) {
         const searchTypeText = searchType === 'sha' ? 'commit ID' : 'search terms';
-        showError(`No commits found for ${searchTypeText}: "${data.query}"`);
+        const filterSummary = formatAppliedFilterSummary(data.applied_filters);
+        const filterSuffix = filterSummary ? ` (date filter: ${filterSummary})` : '';
+        showError(`No commits found for ${searchTypeText}: "${data.query}"${filterSuffix}`);
         return;
     }
 
@@ -445,11 +452,14 @@ function displayResults(data, searchType) {
     resultsTitle.textContent = `${searchTypeText} Results for "${data.query}"`;
     
     // Show total count if available
-    if (data.total_count !== undefined) {
-        resultsCount.textContent = `${data.total_count} total commit${data.total_count !== 1 ? 's' : ''} found`;
-    } else {
-        resultsCount.textContent = `${data.count} commit${data.count !== 1 ? 's' : ''} found`;
-    }
+    const totalForDisplay = (typeof data.filtered_total === 'number')
+        ? data.filtered_total
+        : (typeof data.total_count === 'number' ? data.total_count : data.count);
+    const baseCount = `${totalForDisplay} commit${totalForDisplay !== 1 ? 's' : ''} found`;
+    const filterSummary = formatAppliedFilterSummary(data.applied_filters);
+    resultsCount.textContent = filterSummary
+        ? `${baseCount} • Date filter: ${filterSummary}`
+        : baseCount;
     
     // Clear previous results
     resultsList.innerHTML = '';
@@ -466,6 +476,40 @@ function displayResults(data, searchType) {
     addLoadMoreButton();
     
     showResults();
+}
+
+function formatAppliedFilterSummary(filter) {
+    if (!filter) return '';
+    const parts = [];
+    if (filter.month) {
+        const monthName = MONTH_NAMES[filter.month - 1] || `Month ${filter.month}`;
+        if (filter.day) {
+            parts.push(`${monthName} ${filter.day}`);
+        } else {
+            parts.push(monthName);
+        }
+    } else if (filter.day) {
+        parts.push(filter.day.toString());
+    }
+
+    if (filter.year) {
+        if (!parts.length) {
+            parts.push(filter.year.toString());
+        } else {
+            parts.push(filter.year.toString());
+        }
+    }
+
+    let summary = parts.join(' ').trim();
+    if (!summary && filter.year) {
+        summary = filter.year.toString();
+    }
+
+    if (filter.assumedCurrentYear && filter.month) {
+        summary += ' (current year)';
+    }
+
+    return summary;
 }
 
 function appendResults(data) {
@@ -501,6 +545,15 @@ function appendResults(data) {
     
     // Update the load more button
     addLoadMoreButton();
+
+    if (resultsCount) {
+        const total = currentResults.length;
+        const baseCount = `${total} commit${total !== 1 ? 's' : ''} found`;
+        const filterSummary = formatAppliedFilterSummary(data.applied_filters);
+        resultsCount.textContent = filterSummary
+            ? `${baseCount} • Date filter: ${filterSummary}`
+            : baseCount;
+    }
 }
 
 function addLoadMoreButton() {

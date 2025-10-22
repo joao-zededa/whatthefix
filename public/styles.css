@@ -1323,9 +1323,11 @@ body.settings-page,
     appearance: none;
     -webkit-appearance: none;
     max-width: 100%;
-    word-break: break-all;
     text-align: center;
     justify-content: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .example-tag:hover {
