@@ -1232,6 +1232,8 @@ body.settings-page,
     display: flex;
     flex-direction: column;
     gap: 12px;
+    align-items: stretch;
+    height: 100%;
     transition: all 0.2s ease;
     box-shadow: 0 12px 30px rgba(11, 24, 34, 0.18);
 }
@@ -1260,14 +1262,23 @@ body.settings-page,
 }
 
 .empty-sample {
-    display: inline-block;
-    margin-top: 6px;
-    padding: 6px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: auto;
+    padding: 8px 16px;
     background: rgba(46, 176, 255, 0.12);
     border-radius: 12px;
     font-family: "Monaco", monospace;
     font-size: 0.85rem;
     color: #b0f5ff;
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 40px;
+    line-height: 24px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .empty-suggest {
@@ -1311,6 +1322,10 @@ body.settings-page,
     border-style: solid;
     appearance: none;
     -webkit-appearance: none;
+    max-width: 100%;
+    word-break: break-all;
+    text-align: center;
+    justify-content: center;
 }
 
 .example-tag:hover {
