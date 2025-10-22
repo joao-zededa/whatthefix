@@ -899,7 +899,14 @@ async function makeGitHubRequest(url, params = {}, userToken = null) {
     if (error.response && error.response.status === 403) {
       const tokenType = userToken ? 'user' : 'environment';
       console.error(`GitHub API rate limit exceeded with ${tokenType} token. Consider adding a GITHUB_TOKEN to your .env file`);
-      throw new Error('API rate limit exceeded. Please try again later or contact administrator.');
+      const message = userToken
+        ? 'GitHub API rate limit exceeded. Please try again shortly.'
+        : 'GitHub API rate limit exceeded for anonymous users. Please log in to continue searching.';
+      const rateError = new Error(message);
+      rateError.rateLimit = true;
+      rateError.status = 429;
+      rateError.requiresAuth = !userToken;
+      throw rateError;
     }
     throw error;
   }
@@ -918,7 +925,10 @@ async function makeGitHubRequestCustom(url, params = {}, extraHeaders = {}) {
   } catch (error) {
     if (error.response && error.response.status === 403) {
       console.error('GitHub API rate limit exceeded. Consider adding a GITHUB_TOKEN to your .env file');
-      throw new Error('API rate limit exceeded. Please try again later or contact administrator.');
+      const rateError = new Error('GitHub API rate limit exceeded. Please log in or try again later.');
+      rateError.rateLimit = true;
+      rateError.status = 429;
+      throw rateError;
     }
     throw error;
   }
@@ -2424,10 +2434,7 @@ async function searchTags(query, page = 1, perPage = 30) {
   }
 }
 
-// API Routes - All protected with authentication
-// Apply authentication middleware to all /api routes
-app.use('/api', ensureAuthenticated);
-
+// Public search endpoints
 app.get('/api/search/commits', async (req, res) => {
   try {
     const { query, type = 'message', page = 1, per_page = 30 } = req.query;
@@ -2471,9 +2478,14 @@ app.get('/api/search/commits', async (req, res) => {
     });
   } catch (error) {
     console.error('Search error:', error.message);
-    res.status(500).json({ 
+    if (error.rateLimit) {
+      return res.status(error.status || 429).json({
+        error: error.message
+      });
+    }
+    res.status(500).json({
       error: 'Failed to search commits',
-      message: error.message 
+      message: error.message
     });
   }
 });
@@ -2503,9 +2515,12 @@ app.get('/api/search/tags', async (req, res) => {
     });
   } catch (error) {
     console.error('Tag search error:', error.message);
-    res.status(500).json({ 
+    if (error.rateLimit) {
+      return res.status(error.status || 429).json({ error: error.message });
+    }
+    res.status(500).json({
       error: 'Failed to search tags',
-      message: error.message 
+      message: error.message
     });
   }
 });
@@ -2558,9 +2573,12 @@ app.get('/api/tags', async (req, res) => {
     });
   } catch (error) {
     console.error('Tags fetch error:', error.message);
-    res.status(500).json({ 
+    if (error.rateLimit) {
+      return res.status(error.status || 429).json({ error: error.message });
+    }
+    res.status(500).json({
       error: 'Failed to fetch tags',
-      message: error.message 
+      message: error.message
     });
   }
 });
@@ -2573,9 +2591,12 @@ app.get('/api/commits/:sha', async (req, res) => {
     res.json(commit);
   } catch (error) {
     console.error('Commit fetch error:', error.message);
-    res.status(500).json({ 
+    if (error.rateLimit) {
+      return res.status(error.status || 429).json({ error: error.message });
+    }
+    res.status(500).json({
       error: 'Failed to fetch commit details',
-      message: error.message 
+      message: error.message
     });
   }
 });
@@ -2587,6 +2608,9 @@ app.get('/api/commits/:sha/tags', async (req, res) => {
     const data = await getTagsContainingCommitGit(sha);
     res.json({ sha, ...data });
   } catch (error) {
+    if (error.rateLimit) {
+      return res.status(error.status || 429).json({ error: error.message });
+    }
     res.status(500).json({ error: 'Failed to fetch tags', message: error.message });
   }
 });
@@ -2619,12 +2643,18 @@ app.get('/api/commits/:sha/backports', async (req, res) => {
     });
   } catch (error) {
     console.error('Backport analysis error:', error.message);
-    res.status(500).json({ 
+    if (error.rateLimit) {
+      return res.status(error.status || 429).json({ error: error.message });
+    }
+    res.status(500).json({
       error: 'Failed to analyze backports',
-      message: error.message 
+      message: error.message
     });
   }
 });
+
+// Apply authentication to remaining /api routes
+app.use('/api', ensureAuthenticated);
 
 // NEW: Get stable branches
 app.get('/api/branches/stable', async (req, res) => {
